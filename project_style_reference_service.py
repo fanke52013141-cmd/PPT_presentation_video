@@ -48,8 +48,8 @@ def _read_json(path: Path, fallback: Any) -> Any:
 
 
 def _write_json(path: Path, value: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    from pipeline_lifecycle import write_json_atomic
+    write_json_atomic(path, value)
 
 
 def _safe_text(value: Any, limit: int = 8000) -> str:
@@ -269,50 +269,63 @@ def _generate_reference_images(
 
     generated = []
     generation_system_content = _read_reference_generation_system_content(dependencies)
-    for index, raw_prompt in enumerate(prompts, start=1):
-        final_prompt = _style_generation_prompt(
-            raw_prompt,
-            image_style,
-            index,
-            generation_system_content,
-        )
-        response = dependencies.generate_image_response(
-            client=client,
-            model=model,
-            prompt=final_prompt,
-            size=image_size,
-            base_url=base_url,
-        )
-        img_bytes = dependencies.extract_image_bytes_from_response(response)
-        filename = f"style_reference_{index:02d}.png"
-        save_path = references_dir / filename
-        canvas = get_project_canvas(project)
-        dependencies.process_and_save_image(
-            img_bytes,
-            str(save_path),
-            target_width=canvas["width"],
-            target_height=canvas["height"],
-        )
-        generated.append({
-            "index": index,
-            "filename": filename,
-            "prompt": raw_prompt,
-            "model": model,
-            "image_size": image_size,
-            "generated_at": datetime.now().isoformat(timespec="seconds"),
-            "url": _image_url(project_id, index),
-        })
+    created_paths = []
+    try:
+        for index, raw_prompt in enumerate(prompts, start=1):
+            final_prompt = _style_generation_prompt(
+                raw_prompt,
+                image_style,
+                index,
+                generation_system_content,
+            )
+            response = dependencies.generate_image_response(
+                client=client,
+                model=model,
+                prompt=final_prompt,
+                size=image_size,
+                base_url=base_url,
+                api_key=api_key,
+            )
+            img_bytes = dependencies.extract_image_bytes_from_response(response)
+            filename = f"style_reference_{index:02d}_{uuid.uuid4().hex}.png"
+            save_path = references_dir / filename
+            created_paths.append(save_path)
+            canvas = get_project_canvas(project)
+            dependencies.process_and_save_image(
+                img_bytes,
+                str(save_path),
+                target_width=canvas["width"],
+                target_height=canvas["height"],
+            )
+            generated.append({
+                "index": index,
+                "filename": filename,
+                "prompt": raw_prompt,
+                "model": model,
+                "image_size": image_size,
+                "generated_at": datetime.now().isoformat(timespec="seconds"),
+                "url": _image_url(project_id, index),
+            })
 
-    manifest = {
-        "version": MANIFEST_VERSION,
-        "legacy_version": LEGACY_MANIFEST_VERSION,
-        "scope": "step3_image_style",
-        "updated_at": datetime.now().isoformat(timespec="seconds"),
-        "style_name": _safe_text(image_style.get("style_name"), 120),
-        "images": generated,
-    }
-    _write_json(_manifest_path(project), manifest)
-    _update_prompt_companion(project, manifest)
+        manifest = {
+            "version": MANIFEST_VERSION,
+            "legacy_version": LEGACY_MANIFEST_VERSION,
+            "scope": "step3_image_style",
+            "updated_at": datetime.now().isoformat(timespec="seconds"),
+            "style_name": _safe_text(image_style.get("style_name"), 120),
+            "images": generated,
+        }
+        from project_style_reference_store import reference_metadata_publication
+        metadata = [_manifest_path(project), _run_dir(project) / "planning/step3_image_style.json"]
+        with reference_metadata_publication(project, metadata):
+            _write_json(_manifest_path(project), manifest)
+            _update_prompt_companion(project, manifest)
+    except Exception:
+        for path in created_paths:
+            path.unlink(missing_ok=True)
+        raise
+    finally:
+        client.close()
     try:
         dependencies.write_project_log(
             project,

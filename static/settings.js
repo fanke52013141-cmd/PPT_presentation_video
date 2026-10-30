@@ -315,8 +315,20 @@ async function testImageConnection() {
   button.disabled = true;
   button.innerHTML = '测试中...';
   try {
+    const signature = new TextEncoder().encode(JSON.stringify(payload));
+    const digest = await crypto.subtle.digest('SHA-256', signature);
+    const key = 'ppt-image-probe-' + Array.from(new Uint8Array(digest), value => value.toString(16).padStart(2, '0')).join('');
+    let previousTask = null;
+    try { previousTask = sessionStorage.getItem(key); } catch (_) { /* storage may be disabled */ }
+    if (previousTask) payload.resume_task_id = previousTask;
     const result = await API.post('/api/settings/test-image', payload);
-    if (!result.success) showToast(`图片模型连接失败：${result.message || '未知错误'}`);
+    if (result.pending && result.task_id) {
+      try { sessionStorage.setItem(key, result.task_id); } catch (_) { /* response still exposes the original task */ }
+      showToast(result.message);
+    } else {
+      if (result.success || result.task_id) { try { sessionStorage.removeItem(key); } catch (_) {} }
+      if (!result.success) showToast(`图片模型连接失败：${result.message || '未知错误'}`);
+    }
   } catch (error) {
     showToast(`测试请求发送失败: ${error.message}`);
   } finally {

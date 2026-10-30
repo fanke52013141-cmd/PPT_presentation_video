@@ -14,6 +14,7 @@ from __future__ import annotations
 import base64
 import io
 import json
+import uuid
 import re
 from datetime import datetime
 from pathlib import Path
@@ -130,8 +131,8 @@ def _read_json(path: Path, fallback: Any) -> Any:
 
 
 def _write_json(path: Path, value: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    from pipeline_lifecycle import write_json_atomic
+    write_json_atomic(path, value)
 
 
 def _run_dir(project: Any) -> Path:
@@ -237,14 +238,15 @@ def _normalize_uploaded_image(
             background = Image.new("RGBA", img.size, (255, 255, 255, 255))
             background.alpha_composite(img)
             background.convert("RGB").save(path, "PNG")
-    except Exception:
-        path.write_bytes(data)
+    except Exception as exc:
+        raise dependencies.http_exception(status_code=400, detail="参考图无法解码，请上传有效图片") from exc
 
 
 def _save_uploaded_references(
     dependencies: ProjectStyleDependencies,
     project: Any,
     files: list[Any],
+    *, publish_manifest: bool = True,
 ) -> list[dict[str, Any]]:
     if not files:
         raise dependencies.http_exception(status_code=400, detail="请上传 1-3 张参考图")
@@ -253,32 +255,42 @@ def _save_uploaded_references(
     inputs_dir = _inputs_dir(project)
     inputs_dir.mkdir(parents=True, exist_ok=True)
     saved: list[dict[str, Any]] = []
-    for index, file in enumerate(files, start=1):
-        filename = _safe_text(getattr(file, "filename", "") or f"reference_{index}.png", 200)
-        content_type = _safe_text(getattr(file, "content_type", "") or _mime_type(filename), 100)
-        if not content_type.startswith("image/"):
-            raise dependencies.http_exception(status_code=415, detail=f"{filename} 不是图片文件")
-        data = file.file.read(12 * 1024 * 1024 + 1)
-        if not data:
-            raise dependencies.http_exception(status_code=400, detail=f"{filename} 是空文件")
-        if len(data) > 12 * 1024 * 1024:
-            raise dependencies.http_exception(status_code=413, detail=f"{filename} 超过 12MB")
-        out_name = f"reverse_reference_{index:02d}.png"
-        out_path = inputs_dir / out_name
-        _normalize_uploaded_image(dependencies, data, out_path)
-        saved.append({
-            "index": index,
-            "filename": out_name,
-            "original_filename": filename,
-            "content_type": "image/png",
-            "uploaded_at": datetime.now().isoformat(timespec="seconds"),
-        })
-    manifest = {
-        "version": "reverse_style_inputs_v1",
-        "updated_at": datetime.now().isoformat(timespec="seconds"),
-        "images": saved,
-    }
-    _write_json(_inputs_manifest_path(project), manifest)
+    created_paths = []
+    try:
+        for index, file in enumerate(files, start=1):
+            filename = _safe_text(getattr(file, "filename", "") or f"reference_{index}.png", 200)
+            content_type = _safe_text(getattr(file, "content_type", "") or _mime_type(filename), 100)
+            if not content_type.startswith("image/"):
+                raise dependencies.http_exception(status_code=415, detail=f"{filename} 不是图片文件")
+            data = file.file.read(12 * 1024 * 1024 + 1)
+            if not data:
+                raise dependencies.http_exception(status_code=400, detail=f"{filename} 是空文件")
+            if len(data) > 12 * 1024 * 1024:
+                raise dependencies.http_exception(status_code=413, detail=f"{filename} 超过 12MB")
+            out_name = f"reverse_reference_{index:02d}_{uuid.uuid4().hex}.png"
+            out_path = inputs_dir / out_name
+            created_paths.append(out_path)
+            _normalize_uploaded_image(dependencies, data, out_path)
+            saved.append({
+                "index": index,
+                "filename": out_name,
+                "original_filename": filename,
+                "content_type": "image/png",
+                "uploaded_at": datetime.now().isoformat(timespec="seconds"),
+            })
+        manifest = {
+            "version": "reverse_style_inputs_v1",
+            "updated_at": datetime.now().isoformat(timespec="seconds"),
+            "images": saved,
+        }
+        from project_style_reference_store import reference_metadata_publication
+        if publish_manifest:
+            with reference_metadata_publication(project, [_inputs_manifest_path(project)]):
+                _write_json(_inputs_manifest_path(project), manifest)
+    except Exception:
+        for path in created_paths:
+            path.unlink(missing_ok=True)
+        raise
     return saved
 
 
@@ -309,9 +321,11 @@ def _call_vision_model(
     system_content, output_example = _read_reverse_style_prompts(dependencies)
     system_prompt = compose_reverse_style_prompt(system_content, output_example)
 
+    client = None
     try:
         client = dependencies.get_openai_client(api_key=api_key, base_url=base_url, timeout=120.0, max_retries=0)
         from llm_concurrency import governed_llm_request
+        from llm_provider_options import non_thinking_vendor_options
 
         # 一次真实上游请求：逐请求申请项目槽 + 网关全局额度，SDK 隐式重试关闭。
         with governed_llm_request(base_url):
@@ -324,6 +338,7 @@ def _call_vision_model(
                 temperature=0.25,
                 max_tokens=3000,
                 timeout=120,
+                **non_thinking_vendor_options(model, base_url),
             )
         raw = str(response.choices[0].message.content or "").strip()
         parsed = json.loads(_clean_json_markdown(raw))
@@ -334,6 +349,10 @@ def _call_vision_model(
         raise
     except Exception as exc:
         raise dependencies.http_exception(status_code=500, detail=f"反推图片风格失败: {exc}") from exc
+
+    finally:
+        if client is not None:
+            client.close()
 
 
 def _style_with_required_rules(style: dict[str, Any], saved: list[dict[str, Any]], requirement: str) -> dict[str, Any]:
@@ -434,3 +453,22 @@ def save_uploaded_references(*args: Any, **kwargs: Any) -> Any:
 def style_with_required_rules(*args: Any, **kwargs: Any) -> Any:
     """公开包装（审查 L-06）：路由与服务经公开名调用。"""
     return _style_with_required_rules(*args, **kwargs)
+
+
+def analyze_uploaded_references(dependencies, project, files, requirement):
+    """Publish reverse-analysis inputs only after the model result is valid."""
+    saved = _save_uploaded_references(dependencies, project, files, publish_manifest=False)
+    try:
+        requirement_text = _safe_text(requirement, 4000)
+        raw = _call_vision_model(dependencies, saved, project, requirement_text)
+        style = _style_with_required_rules(raw, saved, requirement_text)
+        from project_style_reference_store import reference_metadata_publication
+        with reference_metadata_publication(project, [_inputs_manifest_path(project)]):
+            _write_json(_inputs_manifest_path(project), {
+                "version": "reverse_style_inputs_v1", "updated_at": datetime.now().isoformat(timespec="seconds"),
+                "images": saved})
+        return saved, style
+    except Exception:
+        for item in saved:
+            (_inputs_dir(project) / item["filename"]).unlink(missing_ok=True)
+        raise

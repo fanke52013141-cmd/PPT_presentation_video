@@ -9,7 +9,7 @@ import tempfile
 import threading
 from typing import Any, Callable, Dict, Mapping, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from runtime_support import run_subprocess_bounded
 
 
@@ -32,15 +32,16 @@ class SettingsUpdate(BaseModel):
 
 class TestLlmPayload(BaseModel):
     base_url: Optional[str] = None
-    api_key: str
+    api_key: str = Field(min_length=1)
     model: str
 
 
 class TestImagePayload(BaseModel):
     base_url: Optional[str] = None
-    api_key: str
+    api_key: str = Field(min_length=1)
     model: str
     size: Optional[str] = None
+    resume_task_id: Optional[str] = None
 
 
 class TestTtsPayload(BaseModel):
@@ -143,48 +144,47 @@ def update_system_settings(payload: SettingsUpdate) -> Dict[str, Any]:
 
 def test_llm_connection(payload: TestLlmPayload) -> Dict[str, Any]:
     dependencies = _deps()
+    client = None
     try:
-        client = dependencies.get_openai_client(
-            api_key=payload.api_key,
-            base_url=payload.base_url,
-        )
-        response = client.chat.completions.create(
-            model=payload.model,
-            messages=[{"role": "user", "content": "ping"}],
-            max_tokens=5,
-            timeout=10,
-        )
+        from llm_concurrency import governed_llm_request
+        from llm_provider_options import non_thinking_vendor_options
+        client = dependencies.get_openai_client(api_key=payload.api_key, base_url=payload.base_url, timeout=10, max_retries=0)
+        with governed_llm_request(payload.base_url):
+            response = client.chat.completions.create(model=payload.model,
+                messages=[{"role": "user", "content": "ping"}], max_tokens=5, timeout=10,
+                **non_thinking_vendor_options(payload.model, payload.base_url))
         content = response.choices[0].message.content
-        return {
-            "success": True,
-            "message": f"连接成功！模型响应: '{content.strip()}'",
-        }
+        if not isinstance(content, str) or not content.strip():
+            return {"success": False, "message": "模型未返回有效文本，请检查模型配置。"}
+        return {"success": True, "message": f"连接成功！模型响应: '{content.strip()}'"}
     except Exception as exc:
-        return {"success": False, "message": f"连接失败: {str(exc)}"}
+        return {"success": False, "message": "连接失败: " + str(exc).replace(payload.api_key, "[REDACTED]")}
+    finally:
+        if client is not None:
+            client.close()
 
 
 def test_image_connection(payload: TestImagePayload) -> Dict[str, Any]:
     dependencies = _deps()
+    client = None
     try:
-        client = dependencies.get_openai_client(
-            api_key=payload.api_key,
-            base_url=payload.base_url,
-        )
-        response = dependencies.generate_image_response(
-            client=client,
-            model=payload.model,
-            prompt="a single dot",
-            size=payload.size or "1024x1024",
-            base_url=payload.base_url,
-            # Keep the connection probe responsive. A full image-generation
-            # job may take longer, but the settings UI should fail fast.
-            timeout=15,
-        )
+        client = dependencies.get_openai_client(api_key=payload.api_key, base_url=payload.base_url, timeout=15, max_retries=0)
+        response = dependencies.generate_image_response(client=client, model=payload.model,
+            prompt="a single dot", size=payload.size or "1024x1024", base_url=payload.base_url,
+            api_key=payload.api_key, resume_task_id=payload.resume_task_id or "", timeout=15)
         if dependencies.response_has_image_data(response):
             return {"success": True, "message": "连接成功！生图接口响应正常。"}
         return {"success": False, "message": "未返回有效图片数据。"}
     except Exception as exc:
-        return {"success": False, "message": f"连接失败: {str(exc)}"}
+        info = getattr(exc, "info", None)
+        task_id = str(getattr(info, "upstream_task_id", "") or "")
+        if task_id and getattr(info, "retry_scope", "") == "resume_task":
+            return {"success": False, "pending": True, "task_id": task_id,
+                "message": "检测请求已提交，正在等待图片生成；再次检查将继续查询原任务。"}
+        return {"success": False, "pending": False, "task_id": task_id, "message": "连接失败: " + str(exc).replace(payload.api_key, "[REDACTED]")}
+    finally:
+        if client is not None:
+            client.close()
 
 
 def test_tts_connection(payload: TestTtsPayload) -> Dict[str, Any]:

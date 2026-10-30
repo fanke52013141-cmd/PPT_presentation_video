@@ -7,6 +7,9 @@ Deleting or clearing references also synchronizes
 from __future__ import annotations
 
 import json
+import os
+import uuid
+from contextlib import contextmanager
 import time
 from pathlib import Path
 from typing import Any
@@ -48,6 +51,18 @@ def manifest_path(project: Any) -> Path:
 def references_dir(project: Any) -> Path:
     """公开包装：项目参考图目录。"""
     return _references_dir(project)
+
+
+def reference_path(project: Any, index: int) -> Path | None:
+    """Resolve the currently published reference, including unique batch names."""
+    if index < 1 or index > 3:
+        return None
+    manifest = _normalize_manifest(project, "")
+    for item in manifest["images"]:
+        if item["index"] == index:
+            path = _safe_reference_path(project, item["filename"])
+            return path if path is not None and path.is_file() else None
+    return None
 
 
 def write_normalized_manifest(project: Any, manifest: dict[str, Any]) -> None:
@@ -212,3 +227,30 @@ def delete_all_references(*args: Any, **kwargs: Any) -> Any:
 def delete_reference(*args: Any, **kwargs: Any) -> Any:
     """公开包装（审查 L-06）：路由与服务经公开名调用。"""
     return _delete_reference(*args, **kwargs)
+
+
+@contextmanager
+def reference_metadata_publication(project, paths):
+    """Serialize metadata publication and restore previous bytes on write failure.
+
+    Generated assets have unique filenames, so a failed batch cannot overwrite
+    assets referenced by the previous manifest. This is process-local rollback.
+    """
+    from pipeline_lifecycle import project_artifact_lock
+
+    with project_artifact_lock(project.run_dir):
+        before = {Path(path): Path(path).read_bytes() if Path(path).exists() else None for path in paths}
+        try:
+            yield
+        except Exception:
+            for path, content in before.items():
+                if content is None:
+                    path.unlink(missing_ok=True)
+                else:
+                    pending = path.with_name(path.name + "." + uuid.uuid4().hex + ".rollback")
+                    try:
+                        pending.write_bytes(content)
+                        os.replace(pending, path)
+                    finally:
+                        pending.unlink(missing_ok=True)
+            raise

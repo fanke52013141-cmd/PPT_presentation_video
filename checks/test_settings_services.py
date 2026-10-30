@@ -181,7 +181,7 @@ def test_reference_validation_happens_before_any_import_write() -> None:
     assert writes == []
 
 
-def test_llm_connection_probe_contract_is_unchanged() -> None:
+def test_llm_connection_probe_remains_bounded_and_governed() -> None:
     captured: dict[str, Any] = {}
 
     class Completions:
@@ -196,7 +196,7 @@ def test_llm_connection_probe_contract_is_unchanged() -> None:
             )
 
     client = SimpleNamespace(
-        chat=SimpleNamespace(completions=Completions())
+        chat=SimpleNamespace(completions=Completions()), close=lambda: None
     )
     original = settings_service._deps()
     settings_service.configure_settings_dependencies(
@@ -223,9 +223,9 @@ def test_llm_connection_probe_contract_is_unchanged() -> None:
     }
 
 
-def test_image_connection_probe_contract_is_unchanged() -> None:
+def test_image_connection_probe_passes_native_provider_credentials() -> None:
     captured: dict[str, Any] = {}
-    client = object()
+    client = SimpleNamespace(close=lambda: None)
 
     def generate(**kwargs: Any) -> Any:
         captured.update(kwargs)
@@ -257,6 +257,8 @@ def test_image_connection_probe_contract_is_unchanged() -> None:
         "size": "1024x1024",
         "base_url": "https://example.invalid",
         "timeout": 15,
+        "api_key": "key",
+        "resume_task_id": "",
     }
 
 
@@ -356,3 +358,26 @@ def test_concurrent_masked_save_cannot_overwrite_a_newer_secret() -> None:
         settings_service.configure_settings_dependencies(original)
 
     assert store["llm_api_key"] == "K2"
+
+
+def test_pending_image_probe_returns_original_task_and_resumes_it():
+    from image_generation_errors import ImageGenerationError, ImageGenerationErrorInfo
+    original = settings_service._deps()
+    seen = []
+    client = SimpleNamespace(close=lambda: None)
+    def generate(**kwargs):
+        seen.append(kwargs)
+        raise ImageGenerationError(ImageGenerationErrorInfo(code="poll_timeout", phase="poll", retryable=True,
+            retry_scope="resume_task", outcome_unknown=True, upstream_task_id="exact-original-task"))
+    settings_service.configure_settings_dependencies(replace_settings_dependencies(
+        get_openai_client=lambda **_: client, generate_image_response=generate))
+    try:
+        payload = settings_service.TestImagePayload(api_key="private-test-key", model="image-model")
+        first = settings_service.test_image_connection(payload)
+        assert first["pending"] is True and first["task_id"] == "exact-original-task"
+        payload.resume_task_id = first["task_id"]
+        second = settings_service.test_image_connection(payload)
+        assert second["task_id"] == "exact-original-task"
+        assert seen[1]["resume_task_id"] == "exact-original-task"
+    finally:
+        settings_service.configure_settings_dependencies(original)

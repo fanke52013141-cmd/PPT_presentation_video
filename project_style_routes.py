@@ -158,21 +158,7 @@ async def _reverse_style(
     files: list[UploadFile],
     requirement: str,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    context = _context()
-    saved = reverse_service.save_uploaded_references(context, project, files)
-    requirement_text = reverse_service.safe_text(requirement, 4000)
-    raw_style = reverse_service.call_vision_model(
-        context,
-        saved,
-        project,
-        requirement_text,
-    )
-    style = reverse_service.style_with_required_rules(
-        raw_style,
-        saved,
-        requirement_text,
-    )
-    return saved, style
+    return reverse_service.analyze_uploaded_references(_context(), project, files, requirement)
 
 
 @router.post("/api/projects/{project_id}/steps/3/image-style/reverse")
@@ -443,9 +429,8 @@ def get_step3_reference_image(
     project = _project_or_404(db, project_id)
     if index < 1 or index > 3:
         raise HTTPException(status_code=404, detail="参考图不存在")
-    root = reference_service.references_dir(project).resolve()
-    path = (root / f"style_reference_{index:02d}.png").resolve()
-    if path.parent != root or not path.is_file():
+    path = reference_store.reference_path(project, index)
+    if path is None:
         raise HTTPException(status_code=404, detail="参考图不存在")
     return FileResponse(str(path), media_type="image/png")
 

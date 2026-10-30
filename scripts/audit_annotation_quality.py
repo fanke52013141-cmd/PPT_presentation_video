@@ -10,6 +10,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from annotation_text_layout import candidate_tokens
+from annotation_target_resolver import candidate_review_issues
 from annotation_visual_quality import readable_ai_style
 from annotation_contracts import AnnotationStyle
 from project_storage import slide_dir
@@ -18,12 +19,24 @@ from project_storage import slide_dir
 def audit(run_dir: Path) -> dict:
     contract = json.loads((run_dir / "planning/visual_contract.json").read_text(encoding="utf-8"))
     issues, slides = [], []
+    settings_path = run_dir / "planning/annotation_settings.json"
+    settings = json.loads(settings_path.read_text(encoding="utf-8")) if settings_path.exists() else {}
+    required = settings.get("enabled") is True
+    if settings.get("decision") == "none":
+        issues.append({"code": "annotation_decision_pending", "action": "Decide whether to use annotations before final export."})
     for slide in contract.get("slides", []):
         sid = slide["slide_id"]
         directory = Path(slide_dir(str(run_dir), sid))
         image = directory / "visual_draft.png"
         layout_path = directory / "text_layout.json"
         tokens = candidate_tokens(json.loads(layout_path.read_text(encoding="utf-8"))) if layout_path.exists() else []
+        if required:
+            for artifact in ("text_layout.json", "annotations.json", "annotation_timeline.json"):
+                if not (directory / artifact).is_file():
+                    issues.append({"slide_id": sid, "code": "annotation_artifact_missing", "artifact": artifact,
+                                   "action": "Complete OCR, annotation review and compilation for this page."})
+        for quality in candidate_review_issues(tokens):
+            issues.append({"slide_id": sid, **quality, "action": "Inspect uncertain or small text at full resolution."})
         for token in tokens:
             if any(char in str(token.get("text") or "") for char in ("▣", "�", "\ufffc")):
                 issues.append({"slide_id": sid, "code": "ocr_unknown_glyph", "token_id": token["token_id"],

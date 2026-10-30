@@ -145,3 +145,20 @@ def test_manual_path_stroke_preserves_user_points_and_style():
     assert stroke["closed"] is False
     assert stroke["speed_profile"] == [0.0, 0.5, 1.0]
     assert stroke["brush_height"] == 24.0
+
+
+def test_tilted_text_strokes_follow_ocr_baseline_for_every_style():
+    import math
+    from dataclasses import replace
+
+    for degrees in (-25, 20, 90, 180):
+        cosine, sine = math.cos(math.radians(degrees)), math.sin(math.radians(degrees))
+        rotate = lambda p: (p[0] * cosine - p[1] * sine, p[0] * sine + p[1] * cosine)
+        for style in ("ellipse", "underline", "highlighter"):
+            original = _fragment(style=style)
+            tilted = replace(original, polygons=tuple(tuple(rotate(p) for p in poly) for poly in original.polygons))
+            base, actual = _build([original])[0], _build([tilted])[0]
+            assert len(base["points"]) == len(actual["points"])
+            assert max(math.dist(rotate(p), q) for p, q in zip(base["points"], actual["points"])) < .1
+            if style == "highlighter":
+                assert abs(base["brush_height"] - actual["brush_height"]) < .02

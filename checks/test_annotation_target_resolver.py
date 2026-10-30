@@ -150,3 +150,22 @@ def test_correction_text_used_for_screen_quote():
     payload["corrections"] = {"ta_05": {"text": "从", "chars_changed": False}}
     result = resolve_phrase_target(layout=payload, token_ids=["ta_05", "ta_06"])
     assert result["screen_quote"].startswith("从月")
+
+
+def test_low_confidence_and_tiny_text_require_review_without_changing_content():
+    from annotation_target_resolver import candidate_review_issues
+    tokens = [{"probability_average": .5, "polygon": [[0, 0], [20, 0], [20, 8], [0, 8]]}]
+    assert {issue["code"] for issue in candidate_review_issues(tokens)} == {"ocr_low_confidence", "small_text_target"}
+    assert candidate_review_issues([{**tokens[0], "corrected": True}]) == [
+        {"code": "small_text_target", "message": "目标文字较小，请放大核对标注边界"}]
+    assert candidate_review_issues([{"polygon": [[0, 0], [20, 0], [20, 30], [0, 30]]}]) == []
+
+
+def test_same_ocr_line_does_not_merge_distant_card_targets():
+    from annotation_target_resolver import resolve_phrase_target
+    layout = {"layout_revision": 1, "lines": [{"line_id": "line", "tokens": [
+        {"token_id": "a", "char": "甲", "polygon": [[0, 0], [20, 0], [20, 30], [0, 30]]},
+        {"token_id": "b", "char": "乙", "polygon": [[400, 0], [420, 0], [420, 30], [400, 30]]}]}]}
+    target = resolve_phrase_target(layout=layout, token_ids=["a", "b"])
+    assert len(target["fragments"]) == 2
+    assert target["screen_quote"] == "甲乙"

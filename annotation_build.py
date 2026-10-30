@@ -69,7 +69,7 @@ def input_snapshot(slide_dir, items, canvas, fps=30):
             ("alignment_hash", "word_alignment.json"))},
         "layout_hash": selected_layout_hash(slide_dir, items),
         "content_hash": content_hash(items), "canvas": list(canvas), "fps": int(fps), "ink_version": INK_VERSION,
-        "geometry_revision": "annotation_precision_v2.1",
+        "geometry_revision": "annotation_precision_v2.2",
     }
 
 

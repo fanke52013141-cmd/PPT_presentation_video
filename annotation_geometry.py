@@ -326,13 +326,21 @@ def build_strokes_v2(geometry: GeometryInputV2) -> Tuple[Dict[str, Any], ...]:
     for frag_index, fragment in enumerate(geometry.fragments):
         if not fragment.polygons:
             continue
-        # 片段框 = 各 token 四边形的并集外接框(保留原始四边形由调用方持有)
+        # Generate in the OCR baseline frame, then rotate back to canvas coordinates.
+        # Axis-aligned envelopes inflate tilted text and put underlines through glyphs.
+        edges = [(poly[1][0] - poly[0][0], poly[1][1] - poly[0][1])
+                 for poly in fragment.polygons if len(poly) == 4]
+        dx, dy = sum(edge[0] for edge in edges), sum(edge[1] for edge in edges)
+        angle = math.atan2(dy, dx) if math.hypot(dx, dy) > 1e-6 else 0.0
+        cosine, sine = math.cos(angle), math.sin(angle)
+        rotated = abs(sine) > 1e-6 or cosine < 0
+        first_stroke = len(strokes)
         xs: List[float] = []
         ys: List[float] = []
         for polygon in fragment.polygons:
             for p in polygon:
-                xs.append(float(p[0]))
-                ys.append(float(p[1]))
+                xs.append(float(p[0]) * cosine + float(p[1]) * sine if rotated else float(p[0]))
+                ys.append(-float(p[0]) * sine + float(p[1]) * cosine if rotated else float(p[1]))
         bbox = (min(xs), min(ys), max(xs), max(ys))
         if bbox[2] - bbox[0] < 1 or bbox[3] - bbox[1] < 1:
             continue  # 退化片段(与契约层 degenerate 校验一致)
@@ -382,6 +390,10 @@ def build_strokes_v2(geometry: GeometryInputV2) -> Tuple[Dict[str, Any], ...]:
                     "brush_height": round(max(4.0, (bbox[3] - bbox[1]) + pad * 0.4), 2),
                 }
             )
+        if rotated:
+            for stroke in strokes[first_stroke:]:
+                stroke["points"] = [(round(x * cosine - y * sine, 2), round(x * sine + y * cosine, 2))
+                                    for x, y in stroke["points"]]
     return tuple(strokes)
 
 

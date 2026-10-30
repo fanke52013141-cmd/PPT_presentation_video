@@ -304,7 +304,8 @@ class AnnotationPlanner:
             screen_quote = "".join(str(candidate_map[t].get("text") or "") for t in token_ids)
             uncertain_ocr = any(marker in screen_quote for marker in ("▣", "�", "\ufffc"))
             mismatched_text = screen_quote != quote
-            review_issues = []
+            from annotation_target_resolver import candidate_review_issues
+            review_issues = candidate_review_issues([candidate_map[t] for t in token_ids])
             if ambiguous:
                 review_issues.append({"code": "ambiguous", "message": reason})
             if uncertain_ocr:

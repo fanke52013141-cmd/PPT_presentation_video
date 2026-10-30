@@ -22,7 +22,7 @@ def test_quality_audit_flags_unknown_text_unbound_marks_and_low_contrast_without
     before = {p: (p.read_bytes(), p.stat().st_mtime_ns) for p in tmp_path.rglob("*") if p.is_file()}
     report = audit(tmp_path)
     assert {issue["code"] for issue in report["issues"]} == {
-        "ocr_unknown_glyph", "unbound_region_needs_visual_review", "unconfirmed", "marker_background_conflict"}
+        "ocr_unknown_glyph", "unbound_region_needs_visual_review", "unconfirmed", "marker_background_conflict", "small_text_target"}
     assert report["status"] == "needs_review"
     assert 1 in report["slides"][0]["sample_slide_relative_seconds"]
     assert {p: (p.read_bytes(), p.stat().st_mtime_ns) for p in before} == before
@@ -50,3 +50,13 @@ def test_selected_layout_hash_ignores_unrelated_text_but_binds_selected_text_and
     layout["lines"][0]["tokens"][1]["polygon"][0][0] = 11
     target.write_text(json.dumps(layout), encoding="utf-8")
     assert selected_layout_hash(tmp_path, [item]) != baseline
+
+
+def test_enabled_annotation_audit_cannot_pass_with_missing_artifacts(tmp_path):
+    planning = tmp_path / "planning"
+    planning.mkdir()
+    (planning / "visual_contract.json").write_text(json.dumps({"slides": [{"slide_id": "slide_001"}]}))
+    (planning / "annotation_settings.json").write_text(json.dumps({"enabled": True, "decision": "use"}))
+    report = audit(tmp_path)
+    assert report["status"] == "needs_review"
+    assert {issue["artifact"] for issue in report["issues"]} == {"text_layout.json", "annotations.json", "annotation_timeline.json"}

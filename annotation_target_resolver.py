@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 __all__ = [
@@ -136,6 +137,20 @@ def _expand_candidates(layout: Dict[str, Any]) -> List[Dict[str, Any]]:
     return candidate_tokens(layout)
 
 
+def candidate_review_issues(tokens):
+    """Flag uncertain OCR and tiny targets without guessing or rewriting text."""
+    issues = []
+    scores = [t.get("probability_average") for t in tokens if not t.get("corrected")]
+    if any(isinstance(score, (int, float)) and (not math.isfinite(score) or score < .85) for score in scores):
+        issues.append({"code": "ocr_low_confidence", "message": "OCR 置信度偏低，请对照原图核对文字与位置"})
+    for token in tokens:
+        polygon = token.get("polygon") or []
+        if len(polygon) == 4 and min(math.dist(polygon[0], polygon[3]), math.dist(polygon[1], polygon[2])) < 12:
+            issues.append({"code": "small_text_target", "message": "目标文字较小，请放大核对标注边界"})
+            break
+    return issues
+
+
 def resolve_phrase_target(
     *,
     layout: Dict[str, Any],
@@ -181,7 +196,7 @@ def resolve_phrase_target(
     flush()
 
     screen_quote = "".join(fragment.text for fragment in fragments)
-    issues: List[Dict[str, str]] = []
+    issues: List[Dict[str, str]] = candidate_review_issues(entries)
     if len(fragments) > 1:
         issues.append({"code": "multi_fragment", "message": f"目标跨 {len(fragments)} 个片段(跨行或不连续)"})
     raw_granularity = str(entries[0].get("granularity") or "char") if entries else "char"
@@ -218,4 +233,13 @@ def _adjacent_in_line(layout: Dict[str, Any], first: Dict[str, Any], second: Dic
         i1, i2 = order.index(str(first["token_id"])), order.index(str(second["token_id"]))
     except ValueError:
         return False
-    return abs(i1 - i2) == 1
+    if abs(i1 - i2) != 1:
+        return False
+    a, b = first.get("polygon") or [], second.get("polygon") or []
+    if len(a) == len(b) == 4:
+        height = max(math.dist(a[0], a[3]), math.dist(b[0], b[3]), 1)
+        edge_a = ((a[1][0] + a[2][0]) / 2, (a[1][1] + a[2][1]) / 2)
+        edge_b = ((b[0][0] + b[3][0]) / 2, (b[0][1] + b[3][1]) / 2)
+        if math.dist(edge_a, edge_b) > height * 2:
+            return False  # OCR may assign two independent cards to one line.
+    return True

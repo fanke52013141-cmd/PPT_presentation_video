@@ -126,6 +126,7 @@ def candidate_tokens(layout: Dict[str, Any]) -> List[Dict[str, Any]]:
                     {
                         "token_id": token["token_id"],
                         "line_id": line["line_id"],
+                        "probability_average": line.get("probability_average"),
                         "text": str(correction["text"]) if correction else str(token.get("char") or ""),
                         "original_text": str(token.get("char") or ""),
                         "corrected": correction is not None,
@@ -140,6 +141,7 @@ def candidate_tokens(layout: Dict[str, Any]) -> List[Dict[str, Any]]:
                 {
                     "token_id": line["line_id"],
                     "line_id": line["line_id"],
+                    "probability_average": line.get("probability_average"),
                     "text": line_text,
                     "original_text": line_text,
                     "corrected": False,

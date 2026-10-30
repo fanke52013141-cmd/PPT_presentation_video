@@ -25,3 +25,17 @@ def test_ai_markers_remain_visible_on_paper_yellow_and_dark_backgrounds(tmp_path
 def test_unavailable_source_preserves_the_explicit_default(tmp_path):
     default = AnnotationStyle(type="highlighter", color="#F6CE46", opacity=.28, width=5, padding=4, seed=0)
     assert readable_ai_style(tmp_path / "missing.png", [], default) == default
+
+
+def test_multiline_style_samples_selected_words_instead_of_the_gap(tmp_path):
+    from PIL import ImageDraw
+    path = tmp_path / "cards.png"
+    image = Image.new("RGB", (400, 400), "white")
+    draw = ImageDraw.Draw(image)
+    polygons = [[[10, 10], [50, 10], [50, 30], [10, 30]],
+                [[330, 350], [380, 350], [380, 380], [330, 380]]]
+    for poly in polygons:
+        draw.polygon([tuple(p) for p in poly], fill="#FFE58A")
+    image.save(path)
+    default = AnnotationStyle(type="highlighter", color="#F6CE46", opacity=.28, width=5, padding=4, seed=0)
+    assert readable_ai_style(path, polygons, default).type == "underline"

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from enum import Enum
 from typing import Any, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from agent_contract.domains.freeform import FreeFormRequest
 
@@ -50,7 +50,17 @@ class ProjectCreateRequest(BaseModel):
     config_overrides: dict[str, Any] = Field(default_factory=dict, description="仅本项目的创作配置覆盖项")
     course_id: Optional[str] = Field(None, min_length=1, max_length=120, description="项目所属课程 ID；不填则保留独立项目兼容模式")
     chapter_id: Optional[str] = Field(None, min_length=1, max_length=120, description="项目所属章节 ID；填写时服务端验证课程与账号归属")
+    target_duration_sec: Optional[int] = Field(None, ge=30, le=600, multiple_of=30)
+    manual_pause_steps: Optional[list[str]] = None
+    image_style_template: str = "default"
     idempotency_key: Optional[str] = Field(None, description="幂等键，防止重复创建")
+
+    @field_validator("target_duration_sec", mode="before")
+    @classmethod
+    def validate_duration(cls, value):
+        from storyboard_planning import normalize_target_duration_sec
+        return normalize_target_duration_sec(value)
+
 
 
 class ProjectSummary(BaseModel):
@@ -70,6 +80,10 @@ class ProjectSummary(BaseModel):
     creation_config: Optional[dict[str, Any]] = Field(None, description="项目固定使用的创作配置包版本摘要")
     course_id: Optional[str] = None
     chapter_id: Optional[str] = None
+    target_duration_sec: Optional[int] = None
+    manual_pause_steps: list[str] = Field(default_factory=list)
+    image_style_template: str = "default"
+    canvas: dict[str, Any] = Field(default_factory=dict)
     created_at: Optional[str] = None
 
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, File, Query, UploadFile
+from fastapi import APIRouter, File, Query, Request, UploadFile
 from fastapi.responses import Response
 
 from agent_contract.domains.freeform import FreeFormRequest
@@ -88,13 +88,13 @@ def agent_export_config_zip() -> Response:
 
 
 @router.post("/config/export-with-secrets")
-def agent_export_config_secrets(payload: FreeFormRequest, request) -> dict[str, Any]:
+def agent_export_config_secrets(payload: FreeFormRequest, request: Request) -> dict[str, Any]:
     _require_secret_confirmation(payload.payload, request)
     return _export_with_secrets()
 
 
 @router.post("/config/export-with-secrets-zip")
-def agent_export_config_secrets_zip(payload: FreeFormRequest, request) -> Response:
+def agent_export_config_secrets_zip(payload: FreeFormRequest, request: Request) -> Response:
     _require_secret_confirmation(payload.payload, request)
     return _config_zip_response(_export_with_secrets_zip())
 

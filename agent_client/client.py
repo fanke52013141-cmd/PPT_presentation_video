@@ -206,13 +206,18 @@ class AgentClient:
         canvas_profile: str = "landscape_16_9",
         automation_mode: str = "auto",
         review_policy: str = "none",
-        mask_enabled: bool = True,
+        mask_enabled: bool = False,
         config_package_id: Optional[str] = None,
         config_package_version: Optional[int] = None,
         config_overrides: Optional[dict[str, Any]] = None,
         course_id: Optional[str] = None,
         chapter_id: Optional[str] = None,
         idempotency_key: Optional[str] = None,
+        target_duration_sec: Optional[int] = None,
+        manual_pause_steps: Optional[list[str]] = None,
+        image_style_template: Optional[str] = None,
+        production_mode: str = "guided",
+        presentation_mode: str = "full_frame",
     ) -> dict[str, Any]:
         body: dict[str, Any] = {
             "name": name,
@@ -221,6 +226,8 @@ class AgentClient:
             "automation_mode": automation_mode,
             "review_policy": review_policy,
             "mask_enabled": mask_enabled,
+            "production_mode": production_mode,
+            "presentation_mode": presentation_mode,
         }
         if config_package_id is not None:
             body["config_package_id"] = config_package_id
@@ -232,6 +239,11 @@ class AgentClient:
             body["course_id"] = course_id
         if chapter_id is not None:
             body["chapter_id"] = chapter_id
+        for key, value in (("target_duration_sec", target_duration_sec),
+                           ("manual_pause_steps", manual_pause_steps),
+                           ("image_style_template", image_style_template)):
+            if value is not None:
+                body[key] = value
         if idempotency_key:
             body["idempotency_key"] = idempotency_key
         return self._request("POST", "/api/agent/v1/projects", body=body)

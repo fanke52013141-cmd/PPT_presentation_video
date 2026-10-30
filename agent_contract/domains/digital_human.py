@@ -20,6 +20,11 @@ class DigitalHumanConfigUpdateRequest(BaseModel):
 
 class DigitalHumanConfigResult(BaseModel):
     config: dict[str, Any] = Field(default_factory=dict)
+    slides: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    audio_ready: dict[str, bool] = Field(default_factory=dict)
+    audio_ready_count: int = 0
+    total_slides: int = 0
+    upload_video_exists: bool = False
 
 
 def _cap(**kwargs) -> AgentCapability:
@@ -45,7 +50,7 @@ CAPABILITIES = [
         long_running=True,
     ),
     _cap(
-        id="digital_human.jobs.get",
+        id="digital_human.jobs.get", version="1.2", behavior_version="3",
         description="Read one digital-human generation job by id.",
         agent_api_method="GET", agent_api_path="/api/agent/v1/projects/{project_id}/digital-human/jobs/{job_id}",
         cli_command="digital-human job",
@@ -79,7 +84,7 @@ CAPABILITIES = [
         mcp_enabled=False,
     ),
     _cap(
-        id="digital_human.audio.export",
+        id="digital_human.audio.export", version="1.1", behavior_version="2",
         description="Export the full digital-human narration audio for the project.",
         request_model=OptionalFreeFormRequest,
         agent_api_method="POST", agent_api_path="/api/agent/v1/projects/{project_id}/digital-human/export-audio",
@@ -97,7 +102,7 @@ CAPABILITIES = [
         mcp_enabled=False,
     ),
     _cap(
-        id="digital_human.video.upload",
+        id="digital_human.video.upload", version="1.1", behavior_version="2",
         description="Upload one digital-human presenter video (multipart/form-data).",
         agent_api_method="POST", agent_api_path="/api/agent/v1/projects/{project_id}/digital-human/upload",
         cli_command="digital-human upload-video",

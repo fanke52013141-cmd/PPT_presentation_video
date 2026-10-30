@@ -36,7 +36,7 @@ from agent_contract.domains.digital_human import (  # noqa: F401
     DigitalHumanConfigResult, DigitalHumanConfigUpdateRequest,
 )
 from agent_contract.domains.images import (  # noqa: F401
-    ImageRegenerateRequest, ImageRegenerateResult,
+    ImageRegenerateRequest, ImageRegenerateResult, ImageGenerateRequest, ImageCandidateApplyRequest,
 )
 from agent_contract.domains.narration import (  # noqa: F401
     NarrationUpdateRequest, TtsSynthesizeRequest, TtsSynthesizeResult,

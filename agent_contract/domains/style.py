@@ -71,7 +71,7 @@ CAPABILITIES = [
         service_ref="project_style_routes.update_reverse_style_prompt_settings",
     ),
     _cap(
-        id="style.reverse.generate",
+        id="style.reverse.generate", version="1.1", behavior_version="2",
         description="Reverse-analyze the Step 3 style from uploaded reference images via a multimodal call (multipart/form-data: files, requirement, apply).",
         agent_api_method="POST", agent_api_path="/api/agent/v1/projects/{project_id}/style/reverse",
         cli_command="style reverse",
@@ -80,7 +80,7 @@ CAPABILITIES = [
         mcp_enabled=False,
     ),
     _cap(
-        id="style.reverse.generate_legacy",
+        id="style.reverse.generate_legacy", version="1.1", behavior_version="2",
         description="Legacy project-profile reverse-analysis path (multipart/form-data: files, requirement, apply).",
         agent_api_method="POST", agent_api_path="/api/agent/v1/projects/{project_id}/style/reverse-legacy",
         cli_command="style reverse-legacy",
@@ -127,7 +127,7 @@ CAPABILITIES = [
         service_ref="project_style_routes.list_step3_reference_images",
     ),
     _cap(
-        id="style.references.generate",
+        id="style.references.generate", version="1.1", behavior_version="2",
         description="Generate style reference images via LLM synchronously.",
         request_model=FreeFormRequest,
         agent_api_method="POST", agent_api_path="/api/agent/v1/projects/{project_id}/style/references/generate",
@@ -178,7 +178,7 @@ CAPABILITIES = [
         service_ref="project_style_routes.list_legacy_reference_images",
     ),
     _cap(
-        id="style.references_legacy.generate",
+        id="style.references_legacy.generate", version="1.1", behavior_version="2",
         description="Legacy project-profile reference image generation path.",
         request_model=FreeFormRequest,
         agent_api_method="POST", agent_api_path="/api/agent/v1/projects/{project_id}/style/references-legacy/generate",

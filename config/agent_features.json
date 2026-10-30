@@ -1146,8 +1146,8 @@
     "capabilities": [
       "digital_human.video.upload"
     ],
-    "coverage": "partial",
-    "reason": "HTTP multipart transport declared; Agent client upload support pending."
+    "coverage": "complete",
+    "reason": "Real FFmpeg MP4 upload roundtrip and corrupt-replacement preservation verified in checks/agent/test_configuration_assets_acceptance.py; bounded reads and no-op impact regression retained."
   },
   "digital_human_routes.get_dh_upload_video": {
     "source": "digital_human_routes.py",
@@ -1162,8 +1162,8 @@
     "capabilities": [
       "digital_human.video.uploaded.get"
     ],
-    "coverage": "partial",
-    "reason": "HTTP byte-stream transport declared; transfer client exists; domain acceptance pending."
+    "coverage": "complete",
+    "reason": "Real MP4 byte-for-byte binary roundtrip verified in checks/agent/test_configuration_assets_acceptance.py."
   },
   "digital_human_routes.dh_health": {
     "source": "digital_human_routes.py",
@@ -1178,8 +1178,8 @@
     "capabilities": [
       "digital_human.health"
     ],
-    "coverage": "partial",
-    "reason": "Requires the external engine/service; acceptance pending."
+    "coverage": "complete",
+    "reason": "Local ComfyUI real non-mock acceptance 2026-10-30: avatar, single/full jobs, source-checked audio, exact-engine-ID recovery, verified downloads and audio-preserving composition; isolated scenarios cover failed media and stale inputs."
   },
   "digital_human_routes.upload_dh_avatar": {
     "source": "digital_human_routes.py",
@@ -1194,8 +1194,8 @@
     "capabilities": [
       "digital_human.avatars.upload"
     ],
-    "coverage": "partial",
-    "reason": "HTTP multipart transport declared; Agent client upload support pending."
+    "coverage": "complete",
+    "reason": "Local ComfyUI real non-mock acceptance 2026-10-30: avatar, single/full jobs, source-checked audio, exact-engine-ID recovery, verified downloads and audio-preserving composition; isolated scenarios cover failed media and stale inputs."
   },
   "digital_human_routes.list_dh_avatars": {
     "source": "digital_human_routes.py",
@@ -1210,8 +1210,8 @@
     "capabilities": [
       "digital_human.avatars.list"
     ],
-    "coverage": "partial",
-    "reason": "Requires the external engine/service; acceptance pending."
+    "coverage": "complete",
+    "reason": "Local ComfyUI real non-mock acceptance 2026-10-30: avatar, single/full jobs, source-checked audio, exact-engine-ID recovery, verified downloads and audio-preserving composition; isolated scenarios cover failed media and stale inputs."
   },
   "digital_human_routes.upload_comfyui_workflow": {
     "source": "digital_human_routes.py",
@@ -1258,8 +1258,8 @@
     "capabilities": [
       "digital_human.slide.generate"
     ],
-    "coverage": "partial",
-    "reason": "Requires the external engine/service; acceptance pending."
+    "coverage": "complete",
+    "reason": "Local ComfyUI real non-mock acceptance 2026-10-30: avatar, single/full jobs, source-checked audio, exact-engine-ID recovery, verified downloads and audio-preserving composition; isolated scenarios cover failed media and stale inputs."
   },
   "digital_human_routes.generate_dh_full": {
     "source": "digital_human_routes.py",
@@ -1274,8 +1274,8 @@
     "capabilities": [
       "digital_human.generate"
     ],
-    "coverage": "partial",
-    "reason": "Requires the external engine/service; acceptance pending."
+    "coverage": "complete",
+    "reason": "Local ComfyUI real non-mock acceptance 2026-10-30: avatar, single/full jobs, source-checked audio, exact-engine-ID recovery, verified downloads and audio-preserving composition; isolated scenarios cover failed media and stale inputs."
   },
   "digital_human_routes.get_dh_job": {
     "source": "digital_human_routes.py",
@@ -1290,8 +1290,8 @@
     "capabilities": [
       "digital_human.jobs.get"
     ],
-    "coverage": "partial",
-    "reason": "Requires the external engine/service; acceptance pending."
+    "coverage": "complete",
+    "reason": "Local ComfyUI real non-mock acceptance 2026-10-30: avatar, single/full jobs, source-checked audio, exact-engine-ID recovery, verified downloads and audio-preserving composition; isolated scenarios cover failed media and stale inputs."
   },
   "digital_human_routes.get_dh_slide_video": {
     "source": "digital_human_routes.py",
@@ -1306,8 +1306,8 @@
     "capabilities": [
       "digital_human.slide_video.get"
     ],
-    "coverage": "partial",
-    "reason": "HTTP byte-stream transport declared; transfer client exists; domain acceptance pending."
+    "coverage": "complete",
+    "reason": "Local ComfyUI real non-mock acceptance 2026-10-30: avatar, single/full jobs, source-checked audio, exact-engine-ID recovery, verified downloads and audio-preserving composition; isolated scenarios cover failed media and stale inputs."
   },
   "digital_human_routes.compose_dh_slide": {
     "source": "digital_human_routes.py",
@@ -1322,8 +1322,8 @@
     "capabilities": [
       "digital_human.slide.compose"
     ],
-    "coverage": "partial",
-    "reason": "Requires the external engine/service; acceptance pending."
+    "coverage": "complete",
+    "reason": "Local ComfyUI real non-mock acceptance 2026-10-30: avatar, single/full jobs, source-checked audio, exact-engine-ID recovery, verified downloads and audio-preserving composition; isolated scenarios cover failed media and stale inputs."
   },
   "digital_human_routes.get_dh_composite_video": {
     "source": "digital_human_routes.py",
@@ -1338,8 +1338,8 @@
     "capabilities": [
       "digital_human.composite_video.get"
     ],
-    "coverage": "partial",
-    "reason": "HTTP byte-stream transport declared; transfer client exists; domain acceptance pending."
+    "coverage": "complete",
+    "reason": "Local ComfyUI real non-mock acceptance 2026-10-30: avatar, single/full jobs, source-checked audio, exact-engine-ID recovery, verified downloads and audio-preserving composition; isolated scenarios cover failed media and stale inputs."
   },
   "digital_human_routes.export_full_audio": {
     "source": "digital_human_routes.py",
@@ -1354,8 +1354,8 @@
     "capabilities": [
       "digital_human.audio.export"
     ],
-    "coverage": "partial",
-    "reason": "Requires the external engine/service; acceptance pending."
+    "coverage": "complete",
+    "reason": "Local ComfyUI real non-mock acceptance 2026-10-30: avatar, single/full jobs, source-checked audio, exact-engine-ID recovery, verified downloads and audio-preserving composition; isolated scenarios cover failed media and stale inputs."
   },
   "digital_human_routes.get_full_audio": {
     "source": "digital_human_routes.py",
@@ -1370,8 +1370,8 @@
     "capabilities": [
       "digital_human.audio.file"
     ],
-    "coverage": "partial",
-    "reason": "HTTP byte-stream transport declared; transfer client exists; domain acceptance pending."
+    "coverage": "complete",
+    "reason": "Local ComfyUI real non-mock acceptance 2026-10-30: avatar, single/full jobs, source-checked audio, exact-engine-ID recovery, verified downloads and audio-preserving composition; isolated scenarios cover failed media and stale inputs."
   },
   "generation_control_routes.get_generation_control": {
     "source": "generation_control_routes.py",
@@ -1963,8 +1963,8 @@
     "capabilities": [
       "mask.semantic_blocks"
     ],
-    "coverage": "partial",
-    "reason": "Adapter verified structurally; scenario requires generated project assets and is pending."
+    "coverage": "complete",
+    "reason": "Real isolated workflow assets: single-slide refresh preserves exact masks and other pages; repeated call and missing-slide rejection preserve bytes/mtime in checks/agent/test_state_mask_annotation_acceptance.py."
   },
   "mask_editor_routes.get_step5_result": {
     "source": "mask_editor_routes.py",
@@ -2587,8 +2587,8 @@
     "capabilities": [
       "project.impacts.image_reuse_confirm"
     ],
-    "coverage": "partial",
-    "reason": "Adapter verified structurally; scenario requires generated project assets and is pending."
+    "coverage": "complete",
+    "reason": "Real contract visual change and exact source/hash image reuse passed 2026-10-30; stale hash rejection and unrelated audio preservation covered by isolated scenario."
   },
   "project_routes.create_project": {
     "source": "project_routes.py",
@@ -2603,8 +2603,8 @@
     "capabilities": [
       "project.create"
     ],
-    "coverage": "partial",
-    "reason": "Agent counterpart exists; field and behavior parity requires domain acceptance."
+    "coverage": "complete",
+    "reason": "Project field/behavior review plus lifecycle, canvas/mode, ownership, no-op, CAS and deletion scenarios in checks/agent/test_project_lifecycle_acceptance.py and test_state_mask_annotation_acceptance.py. Target duration, pause stages and style template now exposed; audio freshness available via project.state; local run_dir remains server-owned."
   },
   "project_routes.list_projects": {
     "source": "project_routes.py",
@@ -2619,8 +2619,8 @@
     "capabilities": [
       "project.list"
     ],
-    "coverage": "partial",
-    "reason": "Agent counterpart exists; field and behavior parity requires domain acceptance."
+    "coverage": "complete",
+    "reason": "Project field/behavior review plus lifecycle, canvas/mode, ownership, no-op, CAS and deletion scenarios in checks/agent/test_project_lifecycle_acceptance.py and test_state_mask_annotation_acceptance.py. Target duration, pause stages and style template now exposed; audio freshness available via project.state; local run_dir remains server-owned."
   },
   "project_routes.get_project": {
     "source": "project_routes.py",
@@ -2636,8 +2636,8 @@
       "project.get",
       "project.state"
     ],
-    "coverage": "partial",
-    "reason": "Project metadata plus read-only workflow state, resource hashes and source-owned checks are exposed. Remaining detail fields and full domain acceptance are pending."
+    "coverage": "complete",
+    "reason": "Project field/behavior review plus lifecycle, canvas/mode, ownership, no-op, CAS and deletion scenarios in checks/agent/test_project_lifecycle_acceptance.py and test_state_mask_annotation_acceptance.py. Target duration, pause stages and style template now exposed; audio freshness available via project.state; local run_dir remains server-owned."
   },
   "project_routes.get_project_ai_mode": {
     "source": "project_routes.py",
@@ -2684,8 +2684,8 @@
     "capabilities": [
       "project.update"
     ],
-    "coverage": "partial",
-    "reason": "Agent counterpart exists; field and behavior parity requires domain acceptance."
+    "coverage": "complete",
+    "reason": "Project field/behavior review plus lifecycle, canvas/mode, ownership, no-op, CAS and deletion scenarios in checks/agent/test_project_lifecycle_acceptance.py and test_state_mask_annotation_acceptance.py. Target duration, pause stages and style template now exposed; audio freshness available via project.state; local run_dir remains server-owned."
   },
   "project_routes.delete_project": {
     "source": "project_routes.py",
@@ -2700,8 +2700,8 @@
     "capabilities": [
       "project.delete"
     ],
-    "coverage": "partial",
-    "reason": "Agent counterpart exists; field and behavior parity requires domain acceptance."
+    "coverage": "complete",
+    "reason": "Project field/behavior review plus lifecycle, canvas/mode, ownership, no-op, CAS and deletion scenarios in checks/agent/test_project_lifecycle_acceptance.py and test_state_mask_annotation_acceptance.py. Target duration, pause stages and style template now exposed; audio freshness available via project.state; local run_dir remains server-owned."
   },
   "project_style_routes.get_project_profile_templates": {
     "source": "project_style_routes.py",
@@ -2812,8 +2812,8 @@
     "capabilities": [
       "style.reverse.generate"
     ],
-    "coverage": "partial",
-    "reason": "HTTP multipart transport declared; Agent client upload support pending."
+    "coverage": "complete",
+    "reason": "Live multipart reverse analysis and reference generation passed for Step 3 landscape and legacy portrait paths on 2026-10-30; published asset download and failure rollback scenarios passed."
   },
   "project_style_routes.reverse_legacy_project_image_style": {
     "source": "project_style_routes.py",
@@ -2828,8 +2828,8 @@
     "capabilities": [
       "style.reverse.generate_legacy"
     ],
-    "coverage": "partial",
-    "reason": "HTTP multipart transport declared; Agent client upload support pending."
+    "coverage": "complete",
+    "reason": "Live multipart reverse analysis and reference generation passed for Step 3 landscape and legacy portrait paths on 2026-10-30; published asset download and failure rollback scenarios passed."
   },
   "project_style_routes.get_step3_image_style": {
     "source": "project_style_routes.py",
@@ -2924,8 +2924,8 @@
     "capabilities": [
       "style.references.generate"
     ],
-    "coverage": "partial",
-    "reason": "Deterministic adapter verified; full acceptance requires a live provider run."
+    "coverage": "complete",
+    "reason": "Live multipart reverse analysis and reference generation passed for Step 3 landscape and legacy portrait paths on 2026-10-30; published asset download and failure rollback scenarios passed."
   },
   "project_style_routes.upload_step3_reference_images": {
     "source": "project_style_routes.py",
@@ -3020,8 +3020,8 @@
     "capabilities": [
       "style.references_legacy.generate"
     ],
-    "coverage": "partial",
-    "reason": "Deterministic adapter verified; full acceptance requires a live provider run."
+    "coverage": "complete",
+    "reason": "Live multipart reverse analysis and reference generation passed for Step 3 landscape and legacy portrait paths on 2026-10-30; published asset download and failure rollback scenarios passed."
   },
   "project_style_routes.get_legacy_reference_image": {
     "source": "project_style_routes.py",
@@ -3036,8 +3036,8 @@
     "capabilities": [
       "style.references_legacy.get"
     ],
-    "coverage": "partial",
-    "reason": "HTTP byte-stream transport declared; transfer client exists; domain acceptance pending."
+    "coverage": "complete",
+    "reason": "Current upload and legacy reference read/delete/clear share real isolated project storage; counterpart visibility verified in checks/agent/test_style_media_acceptance.py."
   },
   "project_style_routes.delete_legacy_reference_image": {
     "source": "project_style_routes.py",
@@ -3052,8 +3052,8 @@
     "capabilities": [
       "style.references_legacy.delete"
     ],
-    "coverage": "partial",
-    "reason": "Adapter verified structurally; scenario requires generated project assets and is pending."
+    "coverage": "complete",
+    "reason": "Current upload and legacy reference read/delete/clear share real isolated project storage; counterpart visibility verified in checks/agent/test_style_media_acceptance.py."
   },
   "project_style_routes.delete_all_legacy_reference_images": {
     "source": "project_style_routes.py",
@@ -3068,8 +3068,8 @@
     "capabilities": [
       "style.references_legacy.delete_all"
     ],
-    "coverage": "partial",
-    "reason": "Adapter verified structurally; scenario requires generated project assets and is pending."
+    "coverage": "complete",
+    "reason": "Current upload and legacy reference read/delete/clear share real isolated project storage; counterpart visibility verified in checks/agent/test_style_media_acceptance.py."
   },
   "project_style_routes.list_step3_templates": {
     "source": "project_style_routes.py",
@@ -3292,8 +3292,8 @@
     "capabilities": [
       "settings.config.export.secrets.zip"
     ],
-    "coverage": "partial",
-    "reason": "HTTP byte-stream transport declared; transfer client exists; domain acceptance pending."
+    "coverage": "complete",
+    "reason": "Named HTTP Request injection corrected; explicit confirmation, valid ZIP payload and missing-token rejection verified in checks/agent/test_configuration_assets_acceptance.py."
   },
   "settings_routes.import_full_config": {
     "source": "settings_routes.py",
@@ -3340,8 +3340,8 @@
     "capabilities": [
       "settings.llm.test"
     ],
-    "coverage": "partial",
-    "reason": "Adapter envelope mismatch fixed 2026-10-24 (typed 422 verified with field details); the real-key run remains pending because the test payload must itself carry credentials - the stored-credential path was verified live via connections.test."
+    "coverage": "complete",
+    "reason": "Real credential payload connection checks passed 2026-10-30; bounded governed calls, original async image task resume and secret-safe failures covered by scenarios."
   },
   "settings_routes.test_image_connection": {
     "source": "settings_routes.py",
@@ -3356,8 +3356,8 @@
     "capabilities": [
       "settings.image.test"
     ],
-    "coverage": "partial",
-    "reason": "Adapter envelope mismatch fixed 2026-10-24 (typed 422 verified with field details); the real-key run remains pending because the test payload must itself carry credentials - the stored-credential path was verified live via connections.test."
+    "coverage": "complete",
+    "reason": "Real credential payload connection checks passed 2026-10-30; bounded governed calls, original async image task resume and secret-safe failures covered by scenarios."
   },
   "settings_routes.test_tts_connection": {
     "source": "settings_routes.py",
@@ -3788,8 +3788,8 @@
     "capabilities": [
       "storyboard.execute"
     ],
-    "coverage": "partial",
-    "reason": "Same-chain steps (script/visual/compose) verified live in the 2026-10-24 rehearsal; the legacy composite route itself is pending a dedicated run to avoid overwriting the rehearsal project's contract."
+    "coverage": "complete",
+    "reason": "Dedicated real legacy composite execution passed in isolated two-page project on 2026-10-30; contract output and downstream image reuse verified."
   },
   "storyboard_routes.get_step2_result": {
     "source": "storyboard_routes.py",

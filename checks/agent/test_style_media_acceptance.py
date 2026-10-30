@@ -52,6 +52,24 @@ def test_project_style_reference_upload_download_delete(api):
     assert api.get(base + "/2/content").status_code == 404
 
 
+def test_legacy_reference_reads_and_deletes_share_current_project_storage(api):
+    pid = invoke(api, "project.create", {"name": "Legacy reference assets"}).json()["project"]["project_id"]
+    base = f"/api/agent/v1/projects/{pid}/style/references"
+    result = api.post(base + "/upload", files=[
+        ("files", ("one.png", _png_bytes(320, 180), "image/png")),
+        ("files", ("two.png", _png_bytes(320, 180), "image/png"))])
+    assert result.status_code == 200, result.text
+    old = base + "-legacy"
+    for index in (1, 2):
+        current, legacy = api.get(f"{base}/{index}/content"), api.get(f"{old}/{index}/content")
+        assert legacy.status_code == 200 and legacy.content == current.content
+    assert invoke(api, "style.references_legacy.delete", {"project_id": pid, "index": 1}).status_code == 200
+    assert api.get(base + "/1/content").status_code == 404
+    assert api.get(old + "/2/content").status_code == 200
+    assert invoke(api, "style.references_legacy.delete_all", {"project_id": pid}).status_code == 200
+    assert api.get(base + "/2/content").status_code == 404
+
+
 def test_ip_image_upload_replace_delete_keeps_other_project_isolated(api):
     pid = invoke(api, "project.create", {"name": "IP assets"}).json()["project"]["project_id"]
     other = invoke(api, "project.create", {"name": "Other assets"}).json()["project"]["project_id"]

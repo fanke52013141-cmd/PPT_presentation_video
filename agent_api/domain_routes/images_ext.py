@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 from fastapi.responses import FileResponse, Response
 from sqlalchemy.orm import Session
 
-from agent_contract.domains.images import ImageGenerateRequest
+from agent_contract.domains.images import ImageGenerateRequest, ImageCandidateApplyRequest
 from agent_contract.domains.freeform import FreeFormRequest, OptionalFreeFormRequest
 from database import get_db
 
@@ -139,10 +139,10 @@ def agent_reuse_image_geometry(
 @router.post("/projects/{project_id}/images/apply-candidate")
 def agent_apply_image_candidate(
     project_id: str,
-    payload: FreeFormRequest,
+    payload: ImageCandidateApplyRequest,
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    return service.apply_slide_candidate(project_id, payload.payload, db)
+    return service.apply_slide_candidate(project_id, payload.payload.model_dump(exclude_unset=True), db)
 
 
 @router.get("/projects/{project_id}/images/{slide_id}/candidate")

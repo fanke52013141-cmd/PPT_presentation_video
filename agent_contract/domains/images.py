@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Optional
 
 from pydantic import BaseModel, Field
+from image_region_repair import ImageCandidateApplyPayload
 
 from agent_contract.registry import AgentCapability, CapabilityStatus
 from agent_contract.domains.freeform import FreeFormRequest, OptionalFreeFormRequest
@@ -40,6 +41,10 @@ class ImageDeleteRequest(BaseModel):
     expected_version: str = ""
 
 
+class ImageCandidateApplyRequest(BaseModel):
+    payload: ImageCandidateApplyPayload
+
+
 CAPABILITIES = [
     AgentCapability(
         id="image.prompt_settings.get", version="1.0", behavior_version="1",
@@ -69,7 +74,7 @@ CAPABILITIES = [
         service_ref="image_workflow_service.get_slide_prompts",
     ),
     AgentCapability(
-        id="image.generate", version="1.1", behavior_version="2",
+        id="image.generate", version="1.3", behavior_version="4",
         status=CapabilityStatus.stable,
         description="Generate one slide image synchronously through the generation governor; keeps the raw source pair and registers downstream invalidation.",
         request_model=ImageGenerateRequest, response_model=BaseModel,
@@ -128,10 +133,10 @@ CAPABILITIES = [
         service_ref="image_workflow_service.reuse_slide_image_geometry",
     ),
     AgentCapability(
-        id="image.candidate.apply", version="1.0", behavior_version="1",
+        id="image.candidate.apply", version="1.1", behavior_version="2",
         status=CapabilityStatus.stable,
-        description="Apply a generated candidate image to its slide; candidate identity and provenance are validated.",
-        request_model=FreeFormRequest, response_model=BaseModel,
+        description="Apply a reviewed candidate, optionally within pixel regions; regional writes require matching original/candidate SHA-256 and preserve pixels outside those regions.",
+        request_model=ImageCandidateApplyRequest, response_model=BaseModel,
         agent_api_method="POST", agent_api_path="/api/agent/v1/projects/{project_id}/images/apply-candidate",
         mcp_tool_name="ppt_image_candidate_apply", cli_command="image apply-candidate",
         service_ref="image_workflow_service.apply_slide_candidate",

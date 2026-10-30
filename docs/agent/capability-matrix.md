@@ -1,7 +1,7 @@
 # Agent Capability Matrix
 
-- **Agent API Version**: 2.10.1
-- **Contract Hash**: `5bd6af5c9bfd2cfb`
+- **Agent API Version**: 3.0.0
+- **Contract Hash**: `7303b615b1219d43`
 - **Total Capabilities**: 274
 
 This document is auto-generated from `agent_contract/capabilities.py`.
@@ -18,10 +18,10 @@ Do not edit manually — run `python scripts/generate_agent_contracts.py`.
 | `generation.status` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/generation/{stage}/status` | `ppt_generation_status` | Yes | `generation status` | `generation_control.status` | No | No |
 | `generation.stop` | 1.0 | stable | POST | `/api/agent/v1/projects/{project_id}/generation/{stage}/stop` | `ppt_generation_stop` | Yes | `generation stop` | `generation_control.request_stop` | No | No |
 | `identity.get` | 1.0 | stable | GET | `/api/agent/v1/identity` | `ppt_identity_get` | Yes | `identity` | `agent_api.auth / account_service` | No | No |
-| `project.create` | 1.6 | stable | POST | `/api/agent/v1/projects` | `ppt_project_create` | Yes | `project create` | `project_service.ProjectService.create` | No | No |
-| `project.list` | 1.4 | stable | GET | `/api/agent/v1/projects` | `ppt_project_list` | Yes | `project list` | `project_service.ProjectService.list` | No | No |
-| `project.get` | 1.2 | stable | GET | `/api/agent/v1/projects/{project_id}` | `ppt_project_get` | Yes | `project show` | `project_service.ProjectService.get` | No | No |
-| `project.update` | 1.2 | stable | PATCH | `/api/agent/v1/projects/{project_id}` | `ppt_project_update` | Yes | `project update` | `project_service.ProjectService.update` | No | No |
+| `project.create` | 1.7 | stable | POST | `/api/agent/v1/projects` | `ppt_project_create` | Yes | `project create` | `project_service.ProjectService.create` | No | No |
+| `project.list` | 1.5 | stable | GET | `/api/agent/v1/projects` | `ppt_project_list` | Yes | `project list` | `project_service.ProjectService.list` | No | No |
+| `project.get` | 1.3 | stable | GET | `/api/agent/v1/projects/{project_id}` | `ppt_project_get` | Yes | `project show` | `project_service.ProjectService.get` | No | No |
+| `project.update` | 1.3 | stable | PATCH | `/api/agent/v1/projects/{project_id}` | `ppt_project_update` | Yes | `project update` | `project_service.ProjectService.update` | No | No |
 | `source.set` | 1.1 | stable | POST | `/api/agent/v1/projects/{project_id}/source` | `ppt_source_set` | Yes | `source set` | `article_service.import_article / generate_article_from_topic` | No | No |
 | `pipeline.run` | 1.1 | stable | POST | `/api/agent/v1/projects/{project_id}/runs` | `ppt_pipeline_run` | Yes | `run start` | `one_click_orchestrator.start_one_click` | Yes | No |
 | `pipeline.status` | 1.1 | stable | GET | `/api/agent/v1/projects/{project_id}/runs/latest` | `ppt_pipeline_status` | Yes | `run status` | `one_click_orchestrator.get_one_click_status` | No | No |
@@ -38,8 +38,8 @@ Do not edit manually — run `python scripts/generate_agent_contracts.py`.
 | `diagnostics` | 1.0 | stable | GET | `/api/agent/v1/diagnostics` | `ppt_diagnostics` | Yes | `diagnostics` | `agent_api.routes.get_diagnostics` | No | No |
 | `digital_human.config.get` | 1.1 | stable | GET | `/api/agent/v1/projects/{project_id}/digital-human/config` | `ppt_digital_human_config_get` | Yes | `digital-human config` | `digital_human_routes.router` | No | No |
 | `digital_human.config.update` | 1.1 | stable | PATCH | `/api/agent/v1/projects/{project_id}/digital-human/config` | `ppt_digital_human_config_update` | Yes | `digital-human config --set` | `digital_human_routes.router` | No | No |
-| `digital_human.health` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/digital-human/health` | `ppt_digital_human_health` | Yes | `digital-human health` | `digital_human_client.get_digital_human_client` | No | No |
-| `digital_human.generate` | 1.0 | stable | POST | `/api/agent/v1/projects/{project_id}/digital-human/generate-full` | `ppt_digital_human_generate` | Yes | `digital-human generate` | `digital_human_client.get_digital_human_client` | No | No |
+| `digital_human.health` | 1.1 | stable | GET | `/api/agent/v1/projects/{project_id}/digital-human/health` | `ppt_digital_human_health` | Yes | `digital-human health` | `digital_human_client.get_digital_human_client` | No | No |
+| `digital_human.generate` | 2.0 | stable | POST | `/api/agent/v1/projects/{project_id}/digital-human/generate-full` | `ppt_digital_human_generate` | Yes | `digital-human generate` | `digital_human_routes.generate_dh_full` | Yes | No |
 | `project.delete` | 1.1 | stable | DELETE | `/api/agent/v1/projects/{project_id}` | `ppt_project_delete` | Yes | `project delete` | `project_service.ProjectService.delete` | No | Yes |
 | `checkpoint.list` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/checkpoints` | `ppt_checkpoint_list` | Yes | `checkpoint list` | `agent_api.routes.agent_list_checkpoints` | No | No |
 | `image.get` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/slides/{slide_id}/image` | `ppt_image_get` | No | `image get` | `image_workflow_service.get_slide_image_file` | No | No |
@@ -106,13 +106,13 @@ Do not edit manually — run `python scripts/generate_agent_contracts.py`.
 | `image.prompt_settings.get` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/image-prompt-settings` | `ppt_image_prompt_settings_get` | Yes | `image prompt-settings` | `image_workflow_service.get_step3_prompt_settings` | No | No |
 | `image.prompt_settings.update` | 1.0 | stable | PUT | `/api/agent/v1/projects/{project_id}/image-prompt-settings` | `ppt_image_prompt_settings_update` | Yes | `image prompt-settings --set` | `image_workflow_service.update_step3_prompt_settings` | No | No |
 | `image.prompts.get` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/image-prompts` | `ppt_image_prompts_get` | Yes | `image prompts` | `image_workflow_service.get_slide_prompts` | No | No |
-| `image.generate` | 1.1 | stable | POST | `/api/agent/v1/projects/{project_id}/images/generate` | `ppt_image_generate` | Yes | `image generate` | `image_workflow_service.generate_slide_image` | Yes | No |
+| `image.generate` | 1.3 | stable | POST | `/api/agent/v1/projects/{project_id}/images/generate` | `ppt_image_generate` | Yes | `image generate` | `image_workflow_service.generate_slide_image` | Yes | No |
 | `image.upload` | 1.0 | stable | POST | `/api/agent/v1/projects/{project_id}/images/upload` | `ppt_image_upload` | No | `image upload` | `image_workflow_service.upload_slide_image` | No | No |
 | `image.change_preview.get` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/images/{slide_id}/change-preview` | `ppt_image_change_preview_get` | Yes | `image change-preview` | `image_workflow_service.get_slide_image_change_preview` | No | No |
 | `image.recovery.list` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/images/{slide_id}/recovery` | `ppt_image_recovery_list` | Yes | `image recovery` | `image_workflow_service.list_slide_image_recovery` | No | No |
 | `image.recovery.overlay` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/images/{slide_id}/recovery/{archive_id}/overlay` | `ppt_image_recovery_overlay` | No | `image recovery-overlay` | `image_workflow_service.image_recovery_overlay` | No | No |
 | `image.geometry.reuse` | 1.0 | stable | POST | `/api/agent/v1/projects/{project_id}/images/{slide_id}/reuse-geometry` | `ppt_image_geometry_reuse` | Yes | `image reuse-geometry` | `image_workflow_service.reuse_slide_image_geometry` | No | No |
-| `image.candidate.apply` | 1.0 | stable | POST | `/api/agent/v1/projects/{project_id}/images/apply-candidate` | `ppt_image_candidate_apply` | Yes | `image apply-candidate` | `image_workflow_service.apply_slide_candidate` | No | No |
+| `image.candidate.apply` | 1.1 | stable | POST | `/api/agent/v1/projects/{project_id}/images/apply-candidate` | `ppt_image_candidate_apply` | Yes | `image apply-candidate` | `image_workflow_service.apply_slide_candidate` | No | No |
 | `image.candidate.get` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/images/{slide_id}/candidate` | `ppt_image_candidate_get` | No | `image candidate` | `image_workflow_service.get_slide_candidate_file` | No | No |
 | `image.download_all` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/images/download` | `ppt_image_download_all` | No | `image download-all` | `image_workflow_service.download_all_slide_images` | No | No |
 | `image.delete_all` | 1.0 | stable | DELETE | `/api/agent/v1/projects/{project_id}/images` | `ppt_image_delete_all` | Yes | `image delete-all` | `image_workflow_service.delete_all_slide_images` | No | Yes |
@@ -126,20 +126,20 @@ Do not edit manually — run `python scripts/generate_agent_contracts.py`.
 | `style.generate` | 1.1 | stable | POST | `/api/agent/v1/style/generate` | `ppt_style_generate` | Yes | `style generate` | `project_style_routes.generate_project_image_style` | Yes | No |
 | `style.reverse_settings.get` | 1.0 | stable | GET | `/api/agent/v1/style/reverse-settings` | `ppt_style_reverse_settings_get` | Yes | `style reverse-settings` | `project_style_routes.get_reverse_style_prompt_settings` | No | No |
 | `style.reverse_settings.update` | 1.0 | stable | PUT | `/api/agent/v1/style/reverse-settings` | `ppt_style_reverse_settings_update` | Yes | `style reverse-settings --set` | `project_style_routes.update_reverse_style_prompt_settings` | No | No |
-| `style.reverse.generate` | 1.0 | stable | POST | `/api/agent/v1/projects/{project_id}/style/reverse` | `ppt_style_reverse_generate` | No | `style reverse` | `project_style_routes.reverse_step3_image_style` | No | No |
-| `style.reverse.generate_legacy` | 1.0 | stable | POST | `/api/agent/v1/projects/{project_id}/style/reverse-legacy` | `ppt_style_reverse_generate_legacy` | No | `style reverse-legacy` | `project_style_routes.reverse_legacy_project_image_style` | No | No |
+| `style.reverse.generate` | 1.1 | stable | POST | `/api/agent/v1/projects/{project_id}/style/reverse` | `ppt_style_reverse_generate` | No | `style reverse` | `project_style_routes.reverse_step3_image_style` | No | No |
+| `style.reverse.generate_legacy` | 1.1 | stable | POST | `/api/agent/v1/projects/{project_id}/style/reverse-legacy` | `ppt_style_reverse_generate_legacy` | No | `style reverse-legacy` | `project_style_routes.reverse_legacy_project_image_style` | No | No |
 | `style.get` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/style` | `ppt_style_get` | Yes | `style show` | `project_style_routes.get_step3_image_style` | No | No |
 | `style.update` | 1.0 | stable | PUT | `/api/agent/v1/projects/{project_id}/style` | `ppt_style_update` | Yes | `style --set` | `project_style_routes.put_step3_image_style` | No | No |
 | `style.reference_settings.get` | 1.0 | stable | GET | `/api/agent/v1/style/reference-settings` | `ppt_style_reference_settings_get` | Yes | `style reference-settings` | `project_style_routes.get_reference_generation_prompt_settings` | No | No |
 | `style.reference_settings.update` | 1.0 | stable | PUT | `/api/agent/v1/style/reference-settings` | `ppt_style_reference_settings_update` | Yes | `style reference-settings --set` | `project_style_routes.update_reference_generation_prompt_settings` | No | No |
 | `style.references.list` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/style/references` | `ppt_style_references_list` | Yes | `style references` | `project_style_routes.list_step3_reference_images` | No | No |
-| `style.references.generate` | 1.0 | stable | POST | `/api/agent/v1/projects/{project_id}/style/references/generate` | `ppt_style_references_generate` | Yes | `style references-generate` | `project_style_routes.generate_step3_reference_images` | Yes | No |
+| `style.references.generate` | 1.1 | stable | POST | `/api/agent/v1/projects/{project_id}/style/references/generate` | `ppt_style_references_generate` | Yes | `style references-generate` | `project_style_routes.generate_step3_reference_images` | Yes | No |
 | `style.references.upload` | 1.0 | stable | POST | `/api/agent/v1/projects/{project_id}/style/references/upload` | `ppt_style_references_upload` | No | `style references-upload` | `project_style_routes.upload_step3_reference_images` | No | No |
 | `style.references.get` | 1.1 | stable | GET | `/api/agent/v1/projects/{project_id}/style/references/{index}/content` | `ppt_style_references_get` | No | `style reference` | `project_style_routes.get_step3_reference_image` | No | No |
 | `style.references.delete` | 1.1 | stable | DELETE | `/api/agent/v1/projects/{project_id}/style/references/{index}` | `ppt_style_references_delete` | Yes | `style reference-delete` | `project_style_routes.delete_step3_reference_image` | No | Yes |
 | `style.references.delete_all` | 1.0 | stable | DELETE | `/api/agent/v1/projects/{project_id}/style/references` | `ppt_style_references_delete_all` | Yes | `style references-clear` | `project_style_routes.delete_all_step3_reference_images` | No | Yes |
 | `style.references_legacy.list` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/style/references-legacy` | `ppt_style_references_legacy_list` | Yes | `style references-legacy` | `project_style_routes.list_legacy_reference_images` | No | No |
-| `style.references_legacy.generate` | 1.0 | stable | POST | `/api/agent/v1/projects/{project_id}/style/references-legacy/generate` | `ppt_style_references_legacy_generate` | Yes | `style references-legacy-generate` | `project_style_routes.generate_legacy_reference_images` | Yes | No |
+| `style.references_legacy.generate` | 1.1 | stable | POST | `/api/agent/v1/projects/{project_id}/style/references-legacy/generate` | `ppt_style_references_legacy_generate` | Yes | `style references-legacy-generate` | `project_style_routes.generate_legacy_reference_images` | Yes | No |
 | `style.references_legacy.get` | 1.1 | stable | GET | `/api/agent/v1/projects/{project_id}/style/references-legacy/{index}/content` | `ppt_style_references_legacy_get` | No | `style reference-legacy` | `project_style_routes.get_legacy_reference_image` | No | No |
 | `style.references_legacy.delete` | 1.1 | stable | DELETE | `/api/agent/v1/projects/{project_id}/style/references-legacy/{index}` | `ppt_style_references_legacy_delete` | Yes | `style reference-legacy-delete` | `project_style_routes.delete_legacy_reference_image` | No | Yes |
 | `style.references_legacy.delete_all` | 1.0 | stable | DELETE | `/api/agent/v1/projects/{project_id}/style/references-legacy` | `ppt_style_references_legacy_delete_all` | Yes | `style references-legacy-clear` | `project_style_routes.delete_all_legacy_reference_images` | No | Yes |
@@ -170,7 +170,7 @@ Do not edit manually — run `python scripts/generate_agent_contracts.py`.
 | `mask.settings.get` | 1.0 | stable | GET | `/api/agent/v1/ai-mask/settings` | `ppt_mask_settings_get` | Yes | `mask settings` | `ai_mask_config.ai_mask_config_payload` | No | No |
 | `mask.settings.update` | 1.0 | stable | PUT | `/api/agent/v1/ai-mask/settings` | `ppt_mask_settings_update` | Yes | `mask settings --set` | `ai_mask_config.save_ai_mask_settings` | No | No |
 | `mask.annotate` | 1.1 | stable | POST | `/api/agent/v1/projects/{project_id}/mask/annotate` | `ppt_mask_annotate` | Yes | `mask annotate` | `ai_mask_service.AiMaskTaskService.annotate_project` | Yes | No |
-| `mask.semantic_blocks` | 1.0 | stable | POST | `/api/agent/v1/projects/{project_id}/mask/semantic-blocks` | `ppt_mask_semantic_blocks` | Yes | `mask semantic-blocks` | `mask_manifest_service.semantic_blocks_project` | No | No |
+| `mask.semantic_blocks` | 1.1 | stable | POST | `/api/agent/v1/projects/{project_id}/mask/semantic-blocks` | `ppt_mask_semantic_blocks` | Yes | `mask semantic-blocks` | `mask_manifest_service.semantic_blocks_project` | No | No |
 | `mask.result.get` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/mask` | `ppt_mask_result_get` | Yes | `mask show` | `mask_manifest_service.get_step5_result` | No | No |
 | `mask.result.repair` | 1.0 | stable | POST | `/api/agent/v1/projects/{project_id}/mask/repair` | `ppt_mask_result_repair` | Yes | `mask repair` | `mask_manifest_service.repair_step5_result` | No | No |
 | `mask.draft.update` | 1.0 | stable | PUT | `/api/agent/v1/projects/{project_id}/mask/draft` | `ppt_mask_draft_update` | Yes | `mask draft --set` | `mask_manifest_service.update_step5_draft` | No | No |
@@ -181,28 +181,28 @@ Do not edit manually — run `python scripts/generate_agent_contracts.py`.
 | `annotation.settings.update` | 1.0 | stable | PUT | `/api/agent/v1/projects/{project_id}/annotations/settings` | `ppt_annotation_settings_update` | Yes | `annotation settings --set` | `annotation_service.AnnotationService.update_settings` | No | No |
 | `annotation.slide.get` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/annotations/slides/{slide_id}` | `ppt_annotation_slide_get` | Yes | `annotation slide` | `annotation_service.AnnotationService.get_slide` | No | No |
 | `annotation.slide.patch` | 1.1 | stable | PATCH | `/api/agent/v1/projects/{project_id}/annotations/slides/{slide_id}` | `ppt_annotation_slide_patch` | Yes | `annotation slide --patch` | `annotation_service.AnnotationService.patch_slide` | No | No |
-| `annotation.text_layout.get` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/annotations/slides/{slide_id}/text-layout` | `ppt_annotation_text_layout_get` | Yes | `annotation text-layout` | `annotation_service.AnnotationService.get_text_layout` | No | No |
+| `annotation.text_layout.get` | 1.1 | stable | GET | `/api/agent/v1/projects/{project_id}/annotations/slides/{slide_id}/text-layout` | `ppt_annotation_text_layout_get` | Yes | `annotation text-layout` | `annotation_service.AnnotationService.get_text_layout` | No | No |
 | `annotation.text_layout.patch` | 1.2 | stable | PATCH | `/api/agent/v1/projects/{project_id}/annotations/slides/{slide_id}/text-layout` | `ppt_annotation_text_layout_patch` | Yes | `annotation text-layout --patch` | `annotation_service.AnnotationService.patch_text_layout` | No | No |
 | `annotation.prompts.get` | 1.1 | stable | GET | `/api/agent/v1/projects/{project_id}/annotations/prompts` | `ppt_annotation_prompts_get` | Yes | `annotation prompts` | `annotation_service.AnnotationService.get_prompts` | No | No |
 | `annotation.prompts.update` | 1.0 | stable | PUT | `/api/agent/v1/projects/{project_id}/annotations/prompts` | `ppt_annotation_prompts_update` | Yes | `annotation prompts --set` | `annotation_service.AnnotationService.put_prompts` | No | No |
-| `annotation.slide.prepare` | 1.2 | stable | POST | `/api/agent/v1/projects/{project_id}/annotations/slides/{slide_id}/prepare` | `ppt_annotation_slide_prepare` | Yes | `annotation prepare` | `annotation_service.AnnotationService.prepare_slide` | No | No |
-| `annotation.slide.confirm` | 1.2 | stable | POST | `/api/agent/v1/projects/{project_id}/annotations/slides/{slide_id}/confirm` | `ppt_annotation_slide_confirm` | Yes | `annotation confirm` | `annotation_service.AnnotationService.confirm_slide` | No | No |
-| `annotation.jobs.submit` | 1.2 | stable | POST | `/api/agent/v1/projects/{project_id}/annotations/jobs` | `ppt_annotation_jobs_submit` | Yes | `annotation submit` | `annotation_service.AnnotationService.submit_job` | Yes | No |
+| `annotation.slide.prepare` | 1.3 | stable | POST | `/api/agent/v1/projects/{project_id}/annotations/slides/{slide_id}/prepare` | `ppt_annotation_slide_prepare` | Yes | `annotation prepare` | `annotation_service.AnnotationService.prepare_slide` | No | No |
+| `annotation.slide.confirm` | 1.3 | stable | POST | `/api/agent/v1/projects/{project_id}/annotations/slides/{slide_id}/confirm` | `ppt_annotation_slide_confirm` | Yes | `annotation confirm` | `annotation_service.AnnotationService.confirm_slide` | No | No |
+| `annotation.jobs.submit` | 1.3 | stable | POST | `/api/agent/v1/projects/{project_id}/annotations/jobs` | `ppt_annotation_jobs_submit` | Yes | `annotation submit` | `annotation_service.AnnotationService.submit_job` | Yes | No |
 | `annotation.jobs.get` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/annotations/jobs/{job_id}` | `ppt_annotation_jobs_get` | Yes | `annotation job` | `annotation_service.AnnotationService.get_job` | No | No |
 | `annotation.jobs.cancel` | 1.0 | stable | POST | `/api/agent/v1/projects/{project_id}/annotations/jobs/{job_id}/cancel` | `ppt_annotation_jobs_cancel` | Yes | `annotation cancel` | `annotation_service.AnnotationService.cancel_job` | No | No |
-| `annotation.preview.export` | 1.2 | stable | POST | `/api/agent/v1/projects/{project_id}/annotations/slides/{slide_id}/export-preview` | `ppt_annotation_preview_export` | Yes | `annotation export-preview` | `annotation_service.AnnotationService.export_preview` | Yes | No |
+| `annotation.preview.export` | 1.3 | stable | POST | `/api/agent/v1/projects/{project_id}/annotations/slides/{slide_id}/export-preview` | `ppt_annotation_preview_export` | Yes | `annotation export-preview` | `annotation_service.AnnotationService.export_preview` | Yes | No |
 | `annotation.scene_asset.get` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/annotations/slides/{slide_id}/scene-assets/{asset}` | `ppt_annotation_scene_asset_get` | No | `annotation scene-asset` | `annotation_service.AnnotationService.preview_scene_asset` | No | No |
-| `annotation.editor_ink.get` | 1.1 | stable | GET | `/api/agent/v1/projects/{project_id}/annotations/slides/{slide_id}/editor-inks/{annotation_id}/{stroke_index}` | `ppt_annotation_editor_ink_get` | No | `annotation editor-ink` | `annotation_service.AnnotationService.annotation_editor_ink` | No | No |
+| `annotation.editor_ink.get` | 1.2 | stable | GET | `/api/agent/v1/projects/{project_id}/annotations/slides/{slide_id}/editor-inks/{annotation_id}/{stroke_index}` | `ppt_annotation_editor_ink_get` | No | `annotation editor-ink` | `annotation_service.AnnotationService.annotation_editor_ink` | No | No |
 | `annotation.ink.get` | 1.1 | stable | GET | `/api/agent/v1/projects/{project_id}/annotations/slides/{slide_id}/inks/{build_id}/{annotation_id}/{stroke_index}/{frame_index}` | `ppt_annotation_ink_get` | No | `annotation ink` | `annotation_service.AnnotationService.annotation_asset` | No | No |
 | `annotation.preview.download` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/annotations/slides/{slide_id}/export-previews/{token}` | `ppt_annotation_preview_download` | No | `annotation preview` | `annotation_service preview_exports` | No | No |
 | `digital_human.slide.generate` | 1.0 | stable | POST | `/api/agent/v1/projects/{project_id}/digital-human/slides/{slide_id}/generate` | `ppt_digital_human_slide_generate` | Yes | `digital-human generate-slide` | `digital_human_routes.generate_dh` | Yes | No |
-| `digital_human.jobs.get` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/digital-human/jobs/{job_id}` | `ppt_digital_human_jobs_get` | Yes | `digital-human job` | `digital_human_routes.get_dh_job` | No | No |
+| `digital_human.jobs.get` | 1.2 | stable | GET | `/api/agent/v1/projects/{project_id}/digital-human/jobs/{job_id}` | `ppt_digital_human_jobs_get` | Yes | `digital-human job` | `digital_human_routes.get_dh_job` | No | No |
 | `digital_human.slide_video.get` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/digital-human/slides/{slide_id}/video` | `ppt_digital_human_slide_video_get` | No | `digital-human slide-video` | `digital_human_routes.get_dh_slide_video` | No | No |
 | `digital_human.slide.compose` | 1.0 | stable | POST | `/api/agent/v1/projects/{project_id}/digital-human/slides/{slide_id}/compose` | `ppt_digital_human_slide_compose` | Yes | `digital-human compose` | `digital_human_routes.compose_dh_slide` | Yes | No |
 | `digital_human.composite_video.get` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/digital-human/slides/{slide_id}/composite-video` | `ppt_digital_human_composite_video_get` | No | `digital-human composite-video` | `digital_human_routes.get_dh_composite_video` | No | No |
-| `digital_human.audio.export` | 1.0 | stable | POST | `/api/agent/v1/projects/{project_id}/digital-human/export-audio` | `ppt_digital_human_audio_export` | Yes | `digital-human export-audio` | `digital_human_routes.export_full_audio` | Yes | No |
+| `digital_human.audio.export` | 1.1 | stable | POST | `/api/agent/v1/projects/{project_id}/digital-human/export-audio` | `ppt_digital_human_audio_export` | Yes | `digital-human export-audio` | `digital_human_routes.export_full_audio` | Yes | No |
 | `digital_human.audio.file` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/digital-human/export-audio/content` | `ppt_digital_human_audio_file` | No | `digital-human audio` | `digital_human_routes.get_full_audio` | No | No |
-| `digital_human.video.upload` | 1.0 | stable | POST | `/api/agent/v1/projects/{project_id}/digital-human/upload` | `ppt_digital_human_video_upload` | No | `digital-human upload-video` | `digital_human_routes.upload_dh_video` | No | No |
+| `digital_human.video.upload` | 1.1 | stable | POST | `/api/agent/v1/projects/{project_id}/digital-human/upload` | `ppt_digital_human_video_upload` | No | `digital-human upload-video` | `digital_human_routes.upload_dh_video` | No | No |
 | `digital_human.video.uploaded.get` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/digital-human/upload/content` | `ppt_digital_human_video_uploaded_get` | No | `digital-human uploaded-video` | `digital_human_routes.get_dh_upload_video` | No | No |
 | `digital_human.avatars.upload` | 1.0 | stable | POST | `/api/agent/v1/projects/{project_id}/digital-human/avatars/upload` | `ppt_digital_human_avatars_upload` | No | `digital-human upload-avatar` | `digital_human_routes.upload_dh_avatar` | No | No |
 | `digital_human.avatars.list` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/digital-human/avatars` | `ppt_digital_human_avatars_list` | Yes | `digital-human avatars` | `digital_human_routes.list_dh_avatars` | No | No |
@@ -244,12 +244,12 @@ Do not edit manually — run `python scripts/generate_agent_contracts.py`.
 | `settings.update` | 1.0 | stable | PUT | `/api/agent/v1/settings` | `ppt_settings_update` | Yes | `settings --set` | `settings_service.update_system_settings` | No | No |
 | `settings.config.export` | 1.0 | stable | GET | `/api/agent/v1/config/export` | `ppt_settings_config_export` | Yes | `settings config-export` | `settings_routes.export_full_config` | No | No |
 | `settings.config.export.zip` | 1.0 | stable | GET | `/api/agent/v1/config/export-zip` | `ppt_settings_config_export_zip` | No | `settings config-export-zip` | `settings_routes.export_full_config_zip` | No | No |
-| `settings.config.export.secrets` | 1.0 | stable | POST | `/api/agent/v1/config/export-with-secrets` | `ppt_settings_config_export_secrets` | Yes | `settings config-export-secrets` | `settings_routes.export_full_config_with_secrets` | No | No |
-| `settings.config.export.secrets.zip` | 1.0 | stable | POST | `/api/agent/v1/config/export-with-secrets-zip` | `ppt_settings_config_export_secrets_zip` | No | `settings config-export-secrets-zip` | `settings_routes.export_full_config_with_secrets_zip` | No | No |
+| `settings.config.export.secrets` | 1.1 | stable | POST | `/api/agent/v1/config/export-with-secrets` | `ppt_settings_config_export_secrets` | Yes | `settings config-export-secrets` | `settings_routes.export_full_config_with_secrets` | No | No |
+| `settings.config.export.secrets.zip` | 1.1 | stable | POST | `/api/agent/v1/config/export-with-secrets-zip` | `ppt_settings_config_export_secrets_zip` | No | `settings config-export-secrets-zip` | `settings_routes.export_full_config_with_secrets_zip` | No | No |
 | `settings.config.import` | 1.0 | stable | POST | `/api/agent/v1/config/import` | `ppt_settings_config_import` | Yes | `settings config-import` | `settings_routes.import_full_config` | No | No |
 | `settings.config.import.zip` | 1.0 | stable | POST | `/api/agent/v1/config/import-zip` | `ppt_settings_config_import_zip` | No | `settings config-import-zip` | `settings_routes.import_full_config_zip` | No | No |
-| `settings.llm.test` | 1.0 | stable | POST | `/api/agent/v1/settings/test-llm` | `ppt_settings_llm_test` | Yes | `settings test-llm` | `settings_service.test_llm_connection` | No | No |
-| `settings.image.test` | 1.0 | stable | POST | `/api/agent/v1/settings/test-image` | `ppt_settings_image_test` | Yes | `settings test-image` | `settings_service.test_image_connection` | No | No |
+| `settings.llm.test` | 1.1 | stable | POST | `/api/agent/v1/settings/test-llm` | `ppt_settings_llm_test` | Yes | `settings test-llm` | `settings_service.test_llm_connection` | No | No |
+| `settings.image.test` | 1.1 | stable | POST | `/api/agent/v1/settings/test-image` | `ppt_settings_image_test` | Yes | `settings test-image` | `settings_service.test_image_connection` | No | No |
 | `settings.tts.test` | 1.0 | stable | POST | `/api/agent/v1/settings/test-tts` | `ppt_settings_tts_test` | Yes | `settings test-tts` | `settings_service.test_tts_connection` | No | No |
 | `settings.comfyui_workflow.get` | 1.0 | stable | GET | `/api/agent/v1/settings/comfyui-tts-workflow` | `ppt_settings_comfyui_workflow_get` | Yes | `settings comfyui-workflow` | `settings_routes.get_comfyui_tts_workflow` | No | No |
 | `settings.comfyui_workflow.upload` | 1.0 | stable | POST | `/api/agent/v1/settings/comfyui-tts-workflow` | `ppt_settings_comfyui_workflow_upload` | No | `settings comfyui-workflow-upload` | `settings_routes.upload_comfyui_tts_workflow` | No | No |
@@ -328,7 +328,7 @@ The registry contributes **230** stable capability tools, plus the fixed search/
 - `ppt_digital_human_config_get` — Get digital-human configuration for a project.
 - `ppt_digital_human_config_update` — Update digital-human configuration for a project.
 - `ppt_digital_human_health` — Check digital-human service availability and model readiness.
-- `ppt_digital_human_generate` — Trigger full digital-human video generation for all slides.
+- `ppt_digital_human_generate` — Submit one full-course presenter job using the selected avatar and current exported audio; returns job_id/status and propagates actual failures.
 - `ppt_project_delete` — Delete a project and all derived artifacts with optional revision checking and account-scoped idempotent replay, including after deletion. Destructive and irreversible.
 - `ppt_checkpoint_list` — List the pipeline checkpoints available for a project.
 - `ppt_article_settings_get` — Read the global article-generation System Content prompt.
@@ -392,7 +392,7 @@ The registry contributes **230** stable capability tools, plus the fixed search/
 - `ppt_image_change_preview_get` — Read the registered downstream impact preview for replacing one slide image.
 - `ppt_image_recovery_list` — List archived image versions available for geometry reuse on one slide.
 - `ppt_image_geometry_reuse` — Reuse saved element geometry from an archived image for one slide.
-- `ppt_image_candidate_apply` — Apply a generated candidate image to its slide; candidate identity and provenance are validated.
+- `ppt_image_candidate_apply` — Apply a reviewed candidate, optionally within pixel regions; regional writes require matching original/candidate SHA-256 and preserve pixels outside those regions.
 - `ppt_image_delete_all` — Delete all slide images with registered downstream invalidation. Destructive and irreversible.
 - `ppt_image_delete` — Delete one slide image (query: disposition, expected_version CAS) with downstream invalidation. Destructive and irreversible.
 - `ppt_image_list` — List all slide image states including versions, candidates and confirmation state.

@@ -1,5 +1,5 @@
 {
-  "agent_api_version": "2.10.1",
+  "agent_api_version": "3.0.0",
   "capabilities": [
     {
       "behavior_version": "2",
@@ -945,7 +945,7 @@
       "version": "1.0"
     },
     {
-      "behavior_version": "2",
+      "behavior_version": "3",
       "bindings": {
         "automation_mode": "body",
         "canvas_profile": "body",
@@ -956,18 +956,21 @@
         "course_id": "body",
         "description": "body",
         "idempotency_key": "body",
+        "image_style_template": "body",
+        "manual_pause_steps": "body",
         "mask_enabled": "body",
         "name": "body",
         "presentation_mode": "body",
         "production_mode": "body",
-        "review_policy": "body"
+        "review_policy": "body",
+        "target_duration_sec": "body"
       },
       "cli_command": "project create",
       "concurrency": {
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "38df3b442e1c6e250d77bdca",
+      "contract_revision": "4390e0c860dc3c5ac6b6af07",
       "description": "Create a project with canvas, production/presentation mode, versioned creation configuration, and optional course/chapter ownership.",
       "destructive": false,
       "domain": "project",
@@ -1112,6 +1115,24 @@
             "default": null,
             "description": "幂等键，防止重复创建"
           },
+          "image_style_template": {
+            "default": "default",
+            "type": "string"
+          },
+          "manual_pause_steps": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
           "mask_enabled": {
             "default": false,
             "description": "旧版兼容字段；新项目默认整页展示",
@@ -1134,6 +1155,20 @@
           "review_policy": {
             "$ref": "#/$defs/ReviewPolicy",
             "default": "none"
+          },
+          "target_duration_sec": {
+            "anyOf": [
+              {
+                "maximum": 600,
+                "minimum": 30,
+                "multipleOf": 30,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           }
         },
         "required": [
@@ -1153,6 +1188,11 @@
               "ai_mode": {
                 "title": "Ai Mode",
                 "type": "string"
+              },
+              "canvas": {
+                "additionalProperties": true,
+                "title": "Canvas",
+                "type": "object"
               },
               "canvas_profile": {
                 "title": "Canvas Profile",
@@ -1216,6 +1256,18 @@
                 "title": "Description",
                 "type": "string"
               },
+              "image_style_template": {
+                "default": "default",
+                "title": "Image Style Template",
+                "type": "string"
+              },
+              "manual_pause_steps": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Manual Pause Steps",
+                "type": "array"
+              },
               "mask_enabled": {
                 "default": false,
                 "description": "旧版渲染兼容标记；由 presentation_mode 同步",
@@ -1264,6 +1316,18 @@
                 },
                 "title": "Step Status",
                 "type": "object"
+              },
+              "target_duration_sec": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Target Duration Sec"
               }
             },
             "required": [
@@ -1295,10 +1359,10 @@
       ],
       "response_kind": "json",
       "status": "stable",
-      "version": "1.6"
+      "version": "1.7"
     },
     {
-      "behavior_version": "3",
+      "behavior_version": "4",
       "bindings": {
         "limit": "query",
         "status_filter": "query"
@@ -1308,7 +1372,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "e5afb67271bc4c4dc6eae33b",
+      "contract_revision": "a91cf542132fbb23a4d63db0",
       "description": "List all projects with optional status filter.",
       "destructive": false,
       "domain": "project",
@@ -1354,6 +1418,11 @@
                 "title": "Ai Mode",
                 "type": "string"
               },
+              "canvas": {
+                "additionalProperties": true,
+                "title": "Canvas",
+                "type": "object"
+              },
               "canvas_profile": {
                 "title": "Canvas Profile",
                 "type": "string"
@@ -1416,6 +1485,18 @@
                 "title": "Description",
                 "type": "string"
               },
+              "image_style_template": {
+                "default": "default",
+                "title": "Image Style Template",
+                "type": "string"
+              },
+              "manual_pause_steps": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Manual Pause Steps",
+                "type": "array"
+              },
               "mask_enabled": {
                 "default": false,
                 "description": "旧版渲染兼容标记；由 presentation_mode 同步",
@@ -1464,6 +1545,18 @@
                 },
                 "title": "Step Status",
                 "type": "object"
+              },
+              "target_duration_sec": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Target Duration Sec"
               }
             },
             "required": [
@@ -1504,10 +1597,10 @@
       ],
       "response_kind": "json",
       "status": "stable",
-      "version": "1.4"
+      "version": "1.5"
     },
     {
-      "behavior_version": "2",
+      "behavior_version": "3",
       "bindings": {
         "project_id": "path"
       },
@@ -1516,7 +1609,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "19342b4f011898da7865057b",
+      "contract_revision": "156e7adb6a87b79ab7c71e89",
       "description": "Get project details including article/contract status, slide IDs, and mask mode.",
       "destructive": false,
       "domain": "project",
@@ -1551,6 +1644,11 @@
               "ai_mode": {
                 "title": "Ai Mode",
                 "type": "string"
+              },
+              "canvas": {
+                "additionalProperties": true,
+                "title": "Canvas",
+                "type": "object"
               },
               "canvas_profile": {
                 "title": "Canvas Profile",
@@ -1614,6 +1712,18 @@
                 "title": "Description",
                 "type": "string"
               },
+              "image_style_template": {
+                "default": "default",
+                "title": "Image Style Template",
+                "type": "string"
+              },
+              "manual_pause_steps": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Manual Pause Steps",
+                "type": "array"
+              },
               "mask_enabled": {
                 "default": false,
                 "description": "旧版渲染兼容标记；由 presentation_mode 同步",
@@ -1662,6 +1772,18 @@
                 },
                 "title": "Step Status",
                 "type": "object"
+              },
+              "target_duration_sec": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Target Duration Sec"
               }
             },
             "required": [
@@ -1710,10 +1832,10 @@
       ],
       "response_kind": "json",
       "status": "stable",
-      "version": "1.2"
+      "version": "1.3"
     },
     {
-      "behavior_version": "2",
+      "behavior_version": "3",
       "bindings": {
         "ai_mode": "body",
         "description": "body",
@@ -1729,7 +1851,7 @@
         "expected_revision_supported": true,
         "resource_scope": "project"
       },
-      "contract_revision": "58539fc09f80e7b59eb8dd0b",
+      "contract_revision": "0259caf89269e257dfe84985",
       "description": "Update project name, description, AI mode, production mode, or presentation mode.",
       "destructive": false,
       "domain": "project",
@@ -1864,6 +1986,11 @@
                 "title": "Ai Mode",
                 "type": "string"
               },
+              "canvas": {
+                "additionalProperties": true,
+                "title": "Canvas",
+                "type": "object"
+              },
               "canvas_profile": {
                 "title": "Canvas Profile",
                 "type": "string"
@@ -1926,6 +2053,18 @@
                 "title": "Description",
                 "type": "string"
               },
+              "image_style_template": {
+                "default": "default",
+                "title": "Image Style Template",
+                "type": "string"
+              },
+              "manual_pause_steps": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Manual Pause Steps",
+                "type": "array"
+              },
               "mask_enabled": {
                 "default": false,
                 "description": "旧版渲染兼容标记；由 presentation_mode 同步",
@@ -1974,6 +2113,18 @@
                 },
                 "title": "Step Status",
                 "type": "object"
+              },
+              "target_duration_sec": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Target Duration Sec"
               }
             },
             "required": [
@@ -2010,7 +2161,7 @@
       ],
       "response_kind": "json",
       "status": "stable",
-      "version": "1.2"
+      "version": "1.3"
     },
     {
       "behavior_version": "2",
@@ -3489,7 +3640,7 @@
       "version": "1.0"
     },
     {
-      "behavior_version": "2",
+      "behavior_version": "3",
       "bindings": {
         "project_id": "path"
       },
@@ -3498,7 +3649,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "8e921fa876bf262c8a0bb6a8",
+      "contract_revision": "88cf9f79e307a46822e65ab1",
       "description": "Get digital-human configuration for a project.",
       "destructive": false,
       "domain": "digital_human",
@@ -3539,7 +3690,7 @@
       "version": "1.1"
     },
     {
-      "behavior_version": "2",
+      "behavior_version": "3",
       "bindings": {
         "config": "body",
         "project_id": "path"
@@ -3549,7 +3700,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "aaca77803a2ef2ce5c037656",
+      "contract_revision": "087d856243dc1fb78fc5e0d4",
       "description": "Update digital-human configuration for a project.",
       "destructive": false,
       "domain": "digital_human",
@@ -3586,10 +3737,40 @@
       "method": "PATCH",
       "output_schema": {
         "properties": {
+          "audio_ready": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "title": "Audio Ready",
+            "type": "object"
+          },
+          "audio_ready_count": {
+            "default": 0,
+            "title": "Audio Ready Count",
+            "type": "integer"
+          },
           "config": {
             "additionalProperties": true,
             "title": "Config",
             "type": "object"
+          },
+          "slides": {
+            "additionalProperties": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Slides",
+            "type": "object"
+          },
+          "total_slides": {
+            "default": 0,
+            "title": "Total Slides",
+            "type": "integer"
+          },
+          "upload_video_exists": {
+            "default": false,
+            "title": "Upload Video Exists",
+            "type": "boolean"
           }
         },
         "type": "object"
@@ -3603,7 +3784,7 @@
       "version": "1.1"
     },
     {
-      "behavior_version": "2",
+      "behavior_version": "3",
       "bindings": {
         "project_id": "path"
       },
@@ -3612,7 +3793,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "f950bb3b5f0e5768232e1e8a",
+      "contract_revision": "4be66b15662e7c7186b175e7",
       "description": "Check digital-human service availability and model readiness.",
       "destructive": false,
       "domain": "digital_human",
@@ -3650,10 +3831,10 @@
       ],
       "response_kind": "json",
       "status": "stable",
-      "version": "1.0"
+      "version": "1.1"
     },
     {
-      "behavior_version": "2",
+      "behavior_version": "4",
       "bindings": {
         "project_id": "path"
       },
@@ -3662,8 +3843,8 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "dd9d6d724f6d117ba02eae8e",
-      "description": "Trigger full digital-human video generation for all slides.",
+      "contract_revision": "8181d280d44c77d89febc7f5",
+      "description": "Submit one full-course presenter job using the selected avatar and current exported audio; returns job_id/status and propagates actual failures.",
       "destructive": false,
       "domain": "digital_human",
       "id": "digital_human.generate",
@@ -3686,7 +3867,7 @@
         "type": "object"
       },
       "invocable": true,
-      "long_running": false,
+      "long_running": true,
       "mcp_enabled": true,
       "mcp_tool": "ppt_digital_human_generate",
       "method": "POST",
@@ -3700,7 +3881,7 @@
       ],
       "response_kind": "json",
       "status": "stable",
-      "version": "1.0"
+      "version": "2.0"
     },
     {
       "behavior_version": "3",
@@ -8397,7 +8578,7 @@
       "version": "1.0"
     },
     {
-      "behavior_version": "2",
+      "behavior_version": "4",
       "bindings": {
         "disposition": "body",
         "expected_version": "body",
@@ -8412,7 +8593,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "598109ba8539a37df31f1abd",
+      "contract_revision": "e63c80893dd9d5fef31c0ace",
       "description": "Generate one slide image synchronously through the generation governor; keeps the raw source pair and registers downstream invalidation.",
       "destructive": false,
       "domain": "image",
@@ -8487,7 +8668,7 @@
       ],
       "response_kind": "json",
       "status": "stable",
-      "version": "1.1"
+      "version": "1.3"
     },
     {
       "behavior_version": "1",
@@ -8782,7 +8963,7 @@
       "version": "1.0"
     },
     {
-      "behavior_version": "1",
+      "behavior_version": "2",
       "bindings": {
         "payload": "body",
         "project_id": "path"
@@ -8792,8 +8973,8 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "f5992bbb40f39c274ce80ba2",
-      "description": "Apply a generated candidate image to its slide; candidate identity and provenance are validated.",
+      "contract_revision": "5831546f756f4bf186492cc3",
+      "description": "Apply a reviewed candidate, optionally within pixel regions; regional writes require matching original/candidate SHA-256 and preserve pixels outside those regions.",
       "destructive": false,
       "domain": "image",
       "id": "image.candidate.apply",
@@ -8802,13 +8983,95 @@
         "supported": false
       },
       "input_schema": {
+        "$defs": {
+          "ImageCandidateApplyPayload": {
+            "properties": {
+              "disposition": {
+                "default": "keep",
+                "title": "Disposition",
+                "type": "string"
+              },
+              "expected_candidate_sha256": {
+                "anyOf": [
+                  {
+                    "pattern": "^[0-9a-f]{64}$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Expected Candidate Sha256"
+              },
+              "expected_image_sha256": {
+                "anyOf": [
+                  {
+                    "pattern": "^[0-9a-f]{64}$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Expected Image Sha256"
+              },
+              "expected_version": {
+                "default": "",
+                "title": "Expected Version",
+                "type": "string"
+              },
+              "regions": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "maxItems": 4,
+                      "minItems": 4,
+                      "prefixItems": [
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "integer"
+                        }
+                      ],
+                      "type": "array"
+                    },
+                    "maxItems": 20,
+                    "minItems": 1,
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Regions"
+              },
+              "slide_id": {
+                "minLength": 1,
+                "title": "Slide Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "slide_id"
+            ],
+            "title": "ImageCandidateApplyPayload",
+            "type": "object"
+          }
+        },
         "additionalProperties": false,
-        "description": "Required business payload envelope (body dict validated by the service).",
         "properties": {
           "payload": {
-            "additionalProperties": true,
-            "description": "业务载荷；字段由业务层校验",
-            "type": "object"
+            "$ref": "#/$defs/ImageCandidateApplyPayload"
           },
           "project_id": {
             "description": "The project ID.",
@@ -8817,6 +9080,7 @@
           }
         },
         "required": [
+          "payload",
           "project_id"
         ],
         "type": "object"
@@ -8836,7 +9100,7 @@
       ],
       "response_kind": "json",
       "status": "stable",
-      "version": "1.0"
+      "version": "1.1"
     },
     {
       "behavior_version": "1",
@@ -9518,7 +9782,7 @@
       "version": "1.0"
     },
     {
-      "behavior_version": "1",
+      "behavior_version": "2",
       "bindings": {
         "project_id": "path"
       },
@@ -9527,7 +9791,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "f4fa2417a06a24887e9eb3d7",
+      "contract_revision": "c1e588adf9001f3fe3da60dc",
       "description": "Reverse-analyze the Step 3 style from uploaded reference images via a multimodal call (multipart/form-data: files, requirement, apply).",
       "destructive": false,
       "domain": "style",
@@ -9565,10 +9829,10 @@
       ],
       "response_kind": "file_upload",
       "status": "stable",
-      "version": "1.0"
+      "version": "1.1"
     },
     {
-      "behavior_version": "1",
+      "behavior_version": "2",
       "bindings": {
         "project_id": "path"
       },
@@ -9577,7 +9841,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "33bcfc4d925bd9e68b7854ed",
+      "contract_revision": "995164c28f10919f07edc9d3",
       "description": "Legacy project-profile reverse-analysis path (multipart/form-data: files, requirement, apply).",
       "destructive": false,
       "domain": "style",
@@ -9615,7 +9879,7 @@
       ],
       "response_kind": "file_upload",
       "status": "stable",
-      "version": "1.0"
+      "version": "1.1"
     },
     {
       "behavior_version": "1",
@@ -9863,7 +10127,7 @@
       "version": "1.0"
     },
     {
-      "behavior_version": "1",
+      "behavior_version": "2",
       "bindings": {
         "payload": "body",
         "project_id": "path"
@@ -9873,7 +10137,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "3be5351d8d740a56ba434267",
+      "contract_revision": "383a153737d23f2ce18b5886",
       "description": "Generate style reference images via LLM synchronously.",
       "destructive": false,
       "domain": "style",
@@ -9917,7 +10181,7 @@
       ],
       "response_kind": "json",
       "status": "stable",
-      "version": "1.0"
+      "version": "1.1"
     },
     {
       "behavior_version": "1",
@@ -10182,7 +10446,7 @@
       "version": "1.0"
     },
     {
-      "behavior_version": "1",
+      "behavior_version": "2",
       "bindings": {
         "payload": "body",
         "project_id": "path"
@@ -10192,7 +10456,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "01352cdf8dcd624e36d00d66",
+      "contract_revision": "2f8fe909e582c7dc64cf1ce0",
       "description": "Legacy project-profile reference image generation path.",
       "destructive": false,
       "domain": "style",
@@ -10236,7 +10500,7 @@
       ],
       "response_kind": "json",
       "status": "stable",
-      "version": "1.0"
+      "version": "1.1"
     },
     {
       "behavior_version": "2",
@@ -11767,7 +12031,7 @@
       "version": "1.1"
     },
     {
-      "behavior_version": "1",
+      "behavior_version": "2",
       "bindings": {
         "payload": "body",
         "project_id": "path"
@@ -11777,7 +12041,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "df983442b40b1664f43d2fae",
+      "contract_revision": "68471b92bcb25d69fdd6e518",
       "description": "Read or normalize the Step 5 semantic blocks derived from the Reveal Manifest.",
       "destructive": false,
       "domain": "mask",
@@ -11829,7 +12093,7 @@
       ],
       "response_kind": "json",
       "status": "stable",
-      "version": "1.0"
+      "version": "1.1"
     },
     {
       "behavior_version": "1",
@@ -12394,7 +12658,7 @@
       "version": "1.1"
     },
     {
-      "behavior_version": "1",
+      "behavior_version": "2",
       "bindings": {
         "project_id": "path",
         "slide_id": "path"
@@ -12404,7 +12668,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "0d4519d013b607ce1a9aff75",
+      "contract_revision": "6a97bc51adf1b70a7c31fb35",
       "description": "Read one slide's OCR text layout used for annotation anchoring.",
       "destructive": false,
       "domain": "annotation",
@@ -12448,7 +12712,7 @@
       ],
       "response_kind": "json",
       "status": "stable",
-      "version": "1.0"
+      "version": "1.1"
     },
     {
       "behavior_version": "3",
@@ -12635,7 +12899,7 @@
       "version": "1.0"
     },
     {
-      "behavior_version": "3",
+      "behavior_version": "4",
       "bindings": {
         "payload": "body",
         "project_id": "path",
@@ -12646,7 +12910,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "85779c1cd1d5b627c9f82ec7",
+      "contract_revision": "39b0b1ae636fd161b30a6932",
       "description": "Prepare one slide for annotation review (scene context binding).",
       "destructive": false,
       "domain": "annotation",
@@ -12696,10 +12960,10 @@
       ],
       "response_kind": "json",
       "status": "stable",
-      "version": "1.2"
+      "version": "1.3"
     },
     {
-      "behavior_version": "3",
+      "behavior_version": "4",
       "bindings": {
         "payload": "body",
         "project_id": "path",
@@ -12710,7 +12974,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "89ad7f13cb87a6326ee7d427",
+      "contract_revision": "31ecf3e545dd498f7855b880",
       "description": "Confirm one slide's annotations; the confirmation binds the reviewed revision and commits once.",
       "destructive": false,
       "domain": "annotation",
@@ -12760,10 +13024,10 @@
       ],
       "response_kind": "json",
       "status": "stable",
-      "version": "1.2"
+      "version": "1.3"
     },
     {
-      "behavior_version": "3",
+      "behavior_version": "4",
       "bindings": {
         "payload": "body",
         "project_id": "path"
@@ -12773,7 +13037,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "7ad7dc0d3105b05c53fbc5be",
+      "contract_revision": "326184de43cb9d3728a1907e",
       "description": "Submit an OCR/annotation planning job; poll via annotation.jobs.get or operation.get when durable.",
       "destructive": false,
       "domain": "annotation",
@@ -12817,7 +13081,7 @@
       ],
       "response_kind": "json",
       "status": "stable",
-      "version": "1.2"
+      "version": "1.3"
     },
     {
       "behavior_version": "1",
@@ -12934,7 +13198,7 @@
       "version": "1.0"
     },
     {
-      "behavior_version": "3",
+      "behavior_version": "4",
       "bindings": {
         "payload": "body",
         "project_id": "path",
@@ -12945,7 +13209,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "d2b58c5aaee8e15ced5b2b25",
+      "contract_revision": "b419f421ab975a888b2fb967",
       "description": "Export an annotation preview video for one slide; returns a token addressable by the download transport.",
       "destructive": false,
       "domain": "annotation",
@@ -12995,7 +13259,7 @@
       ],
       "response_kind": "json",
       "status": "stable",
-      "version": "1.2"
+      "version": "1.3"
     },
     {
       "behavior_version": "1",
@@ -13062,7 +13326,7 @@
       "version": "1.0"
     },
     {
-      "behavior_version": "2",
+      "behavior_version": "3",
       "bindings": {
         "annotation_id": "path",
         "project_id": "path",
@@ -13075,7 +13339,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "de59a1d55fa916e4831ca813",
+      "contract_revision": "79ff71887c367a3a6878a79e",
       "description": "Download one editor ink stroke as binary PNG content (not a JSON tool result).",
       "destructive": false,
       "domain": "annotation",
@@ -13136,7 +13400,7 @@
       ],
       "response_kind": "binary",
       "status": "stable",
-      "version": "1.1"
+      "version": "1.2"
     },
     {
       "behavior_version": "2",
@@ -13358,7 +13622,7 @@
       "version": "1.0"
     },
     {
-      "behavior_version": "1",
+      "behavior_version": "3",
       "bindings": {
         "job_id": "path",
         "project_id": "path"
@@ -13368,7 +13632,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "2ffdd63c69499646c4ce843b",
+      "contract_revision": "e2fd6744c81977463a217670",
       "description": "Read one digital-human generation job by id.",
       "destructive": false,
       "domain": "digital_human",
@@ -13412,7 +13676,7 @@
       ],
       "response_kind": "json",
       "status": "stable",
-      "version": "1.0"
+      "version": "1.2"
     },
     {
       "behavior_version": "1",
@@ -13593,7 +13857,7 @@
       "version": "1.0"
     },
     {
-      "behavior_version": "1",
+      "behavior_version": "2",
       "bindings": {
         "payload": "body",
         "project_id": "path"
@@ -13603,7 +13867,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "48df91ef1fcc958977c49052",
+      "contract_revision": "82560944eb3b0387158a3207",
       "description": "Export the full digital-human narration audio for the project.",
       "destructive": false,
       "domain": "digital_human",
@@ -13655,7 +13919,7 @@
       ],
       "response_kind": "json",
       "status": "stable",
-      "version": "1.0"
+      "version": "1.1"
     },
     {
       "behavior_version": "1",
@@ -13708,7 +13972,7 @@
       "version": "1.0"
     },
     {
-      "behavior_version": "1",
+      "behavior_version": "2",
       "bindings": {
         "project_id": "path"
       },
@@ -13717,7 +13981,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "46324ba155b85547af44e1f0",
+      "contract_revision": "2b5104e20156e71563046e9b",
       "description": "Upload one digital-human presenter video (multipart/form-data).",
       "destructive": false,
       "domain": "digital_human",
@@ -13755,7 +14019,7 @@
       ],
       "response_kind": "file_upload",
       "status": "stable",
-      "version": "1.0"
+      "version": "1.1"
     },
     {
       "behavior_version": "1",
@@ -15812,7 +16076,7 @@
       "version": "1.0"
     },
     {
-      "behavior_version": "1",
+      "behavior_version": "2",
       "bindings": {
         "payload": "body"
       },
@@ -15821,7 +16085,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "e1d775eb06569b8fb38007d6",
+      "contract_revision": "6e0358d9a2e8b0c6c3176972",
       "description": "Export the configuration package including secrets (JSON).",
       "destructive": false,
       "domain": "settings",
@@ -15857,10 +16121,10 @@
       ],
       "response_kind": "json",
       "status": "stable",
-      "version": "1.0"
+      "version": "1.1"
     },
     {
-      "behavior_version": "1",
+      "behavior_version": "2",
       "bindings": {
         "payload": "body"
       },
@@ -15869,7 +16133,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "4836552bf455f06546aafdc4",
+      "contract_revision": "c1204891449f9fbdf2ff91d9",
       "description": "Export the configuration package including secrets as a ZIP byte stream.",
       "destructive": false,
       "domain": "settings",
@@ -15905,7 +16169,7 @@
       ],
       "response_kind": "binary",
       "status": "stable",
-      "version": "1.0"
+      "version": "1.1"
     },
     {
       "behavior_version": "1",
@@ -15996,7 +16260,7 @@
       "version": "1.0"
     },
     {
-      "behavior_version": "1",
+      "behavior_version": "2",
       "bindings": {
         "payload": "body"
       },
@@ -16005,7 +16269,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "0ebdfeaf78f22ea2491c647b",
+      "contract_revision": "80a8032444051437f21de812",
       "description": "Test the LLM connection with the supplied credentials; never stores them.",
       "destructive": false,
       "domain": "settings",
@@ -16041,10 +16305,10 @@
       ],
       "response_kind": "json",
       "status": "stable",
-      "version": "1.0"
+      "version": "1.1"
     },
     {
-      "behavior_version": "1",
+      "behavior_version": "2",
       "bindings": {
         "payload": "body"
       },
@@ -16053,7 +16317,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "c66d27947ea52a58f8949190",
+      "contract_revision": "d64a67d9c2bf66dbb617ccef",
       "description": "Test the image provider connection with the supplied credentials.",
       "destructive": false,
       "domain": "settings",
@@ -16089,7 +16353,7 @@
       ],
       "response_kind": "json",
       "status": "stable",
-      "version": "1.0"
+      "version": "1.1"
     },
     {
       "behavior_version": "1",
@@ -17953,5 +18217,5 @@
       "version": "1.0"
     }
   ],
-  "contract_hash": "5bd6af5c9bfd2cfb"
+  "contract_hash": "7303b615b1219d43"
 }

@@ -247,3 +247,79 @@ def test_storyboard_reuse_requires_current_article_and_contract_hashes(workflow,
     item = next((item for item in remaining if item["id"] == impact["id"]), None)
     if item:
         assert "storyboard" not in item["affected"]
+
+
+def test_semantic_block_refresh_preserves_masks_other_pages_and_noop_bytes(workflow, api):
+    from pathlib import Path
+    from database import Project, SessionLocal
+    pid = workflow["project_id"]
+    with SessionLocal() as db:
+        path = Path(db.get(Project, pid).run_dir) / "reveal_manifest.json"
+    before = json.loads(path.read_text(encoding="utf-8"))
+    other = next(slide for slide in before["slides"] if slide["slide_id"] == "slide_002")
+    args = {"project_id": pid, "payload": {"slide_id": "slide_001"}}
+    refreshed = invoke(api, "mask.semantic_blocks", args)
+    assert refreshed.status_code == 200 and refreshed.json()["processed"] == 1, refreshed.text
+    current = refreshed.json()["manifest"]
+    assert next(slide for slide in current["slides"] if slide["slide_id"] == "slide_002") == other
+    groups_before = next(slide for slide in before["slides"] if slide["slide_id"] == "slide_001")["groups"]
+    groups_after = next(slide for slide in current["slides"] if slide["slide_id"] == "slide_001")["groups"]
+    assert groups_after == groups_before
+    snapshot = path.read_bytes(), path.stat().st_mtime_ns
+    assert invoke(api, "mask.semantic_blocks", args).status_code == 200
+    assert (path.read_bytes(), path.stat().st_mtime_ns) == snapshot
+    assert invoke(api, "mask.semantic_blocks", {"project_id": pid, "payload": {"slide_id": "missing"}}).status_code == 404
+    assert (path.read_bytes(), path.stat().st_mtime_ns) == snapshot
+
+
+def test_regional_candidate_apply_has_cas_and_preserves_other_pixels_and_audio(workflow, api):
+    from pathlib import Path
+    from PIL import Image
+    from database import Project, SessionLocal
+    from artifact_fingerprint import sha256_file
+    from visual_provenance import write_visual_provenance
+    pid = workflow["project_id"]
+    with SessionLocal() as db:
+        root = Path(db.get(Project, pid).run_dir)
+    directory = root / "slides/slide_001"
+    source, candidate = directory / "visual_draft.png", directory / "visual_candidate.png"
+    before = Image.open(source).convert("RGB")
+    Image.new("RGB", before.size, "blue").save(candidate)
+    write_visual_provenance(root, "slide_001", image_path=candidate, provider="openai_compatible", source_type="api_generation", candidate=True)
+    audio = invoke(api, "tts.audio_status.get", {"project_id": pid}).json()
+    other = sha256_file(root / "slides/slide_002/visual_draft.png")
+    payload = {"slide_id": "slide_001", "regions": [[20, 20, 40, 40]],
+               "expected_image_sha256": sha256_file(source), "expected_candidate_sha256": sha256_file(candidate)}
+    stale = invoke(api, "image.candidate.apply", {"project_id": pid, "payload": {**payload, "expected_image_sha256": "a" * 64}})
+    assert stale.status_code == 409 and candidate.exists(), stale.text
+    assert sha256_file(source) == payload["expected_image_sha256"]
+    applied = invoke(api, "image.candidate.apply", {"project_id": pid, "payload": payload})
+    assert applied.status_code == 200, applied.text
+    image = Image.open(source).convert("RGB")
+    assert image.getpixel((30, 30)) == (0, 0, 255)
+    assert image.getpixel((100, 100)) == before.getpixel((100, 100))
+    assert not candidate.exists()
+    provenance = json.loads((directory / "visual_provenance.json").read_text(encoding="utf-8"))
+    assert provenance["regional_repair"]["regions"] == [[20, 20, 40, 40]]
+    assert sha256_file(root / "slides/slide_002/visual_draft.png") == other
+    assert invoke(api, "tts.audio_status.get", {"project_id": pid}).json() == audio
+
+
+def test_image_reuse_confirmation_requires_current_visual_and_image_hashes(workflow, api):
+    import copy
+    pid = workflow["project_id"]
+    stored = invoke(api, "storyboard.contract.get", {"project_id": pid}).json()
+    contract = copy.deepcopy(stored["contract"])
+    contract["slides"][0]["visual_groups"][1]["visual_anchor"] += " 保留已有布局，复核图示。"
+    audio = invoke(api, "tts.audio_status.get", {"project_id": pid}).json()
+    changed = invoke(api, "storyboard.contract.update", {"project_id": pid, "contract": contract,
+        "expected_contract_sha256": stored["contract_sha256"]})
+    assert changed.status_code == 200, changed.text
+    impacts = invoke(api, "project.impacts.get", {"project_id": pid}).json()["items"]
+    impact = next(item for item in impacts if item["id"] == "storyboard_visual_changed:slide_001")
+    payload = {"slide_id": "slide_001", "source_version": impact["source_version"], "image_sha256": impact["image_sha256"]}
+    rejected = invoke(api, "project.impacts.image_reuse_confirm", {"project_id": pid, "payload": {**payload, "image_sha256": "0" * 64}})
+    assert rejected.status_code == 409, rejected.text
+    accepted = invoke(api, "project.impacts.image_reuse_confirm", {"project_id": pid, "payload": payload})
+    assert accepted.status_code == 200 and accepted.json()["resolved"] and accepted.json()["provenance_refreshed"], accepted.text
+    assert invoke(api, "tts.audio_status.get", {"project_id": pid}).json() == audio

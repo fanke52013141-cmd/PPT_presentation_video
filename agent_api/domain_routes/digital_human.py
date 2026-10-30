@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 from fastapi import Depends
 from sqlalchemy.orm import Session
@@ -11,7 +10,6 @@ from agent_contract.models import (
     DigitalHumanConfigUpdateRequest,
     DigitalHumanConfigResult,
 )
-from agent_api.errors import ValidationFailedError, OperationFailedError
 from fastapi import APIRouter
 
 from agent_api.domain_routes.common import _resolve_project
@@ -24,15 +22,11 @@ def agent_get_digital_human_config(
     project_id: str,
     db: Session = Depends(get_db),
 ) -> Any:
-    """Get the digital-human configuration for a project."""
-    project = _resolve_project(db, project_id)
-    config_path = Path(project.run_dir) / "planning" / "digital_human.json"
-    if not config_path.is_file():
-        return DigitalHumanConfigResult(config={"enabled": False, "configured": False})
-    import json as _json
+    """Read the same normalized configuration and media summary as the Web UI."""
+    from digital_human_routes import get_dh_config
 
-    data = _json.loads(config_path.read_text(encoding="utf-8"))
-    return DigitalHumanConfigResult(config=data)
+    return DigitalHumanConfigResult.model_validate(get_dh_config(project_id, db=db))
+
 
 
 @router.patch("/projects/{project_id}/digital-human/config")
@@ -72,36 +66,7 @@ def agent_digital_human_generate_full(
     project_id: str,
     db: Session = Depends(get_db),
 ) -> Any:
-    """Trigger full digital-human generation for all slides."""
-    project = _resolve_project(db, project_id)
-    from visual_contract_service import read_contract_slide_ids
+    """Use the same full-audio generation service as the Web UI."""
+    from digital_human_routes import generate_dh_full
 
-    slide_ids = read_contract_slide_ids(Path(project.run_dir))
-    if not slide_ids:
-        raise ValidationFailedError("No slides found in visual contract")
-    try:
-        from digital_human_client import (
-            get_digital_human_client,
-            DigitalHumanUnavailable,
-        )
-
-        client = get_digital_human_client()
-    except Exception as e:
-        raise OperationFailedError(f"Digital human service unavailable: {e}")
-
-    results: list[dict[str, Any]] = []
-    for slide_id in slide_ids:
-        audio_path = Path(project.run_dir) / "slides" / slide_id / "voice.mp3"
-        if not audio_path.is_file():
-            results.append(
-                {"slide_id": slide_id, "status": "skipped", "reason": "no audio"}
-            )
-            continue
-        try:
-            job = client.create_job(audio_path=str(audio_path), slide_id=slide_id)
-            results.append({"slide_id": slide_id, "status": "submitted", "job": job})
-        except DigitalHumanUnavailable as e:
-            results.append({"slide_id": slide_id, "status": "failed", "error": str(e)})
-        except Exception as e:
-            results.append({"slide_id": slide_id, "status": "failed", "error": str(e)})
-    return {"success": True, "results": results}
+    return generate_dh_full(project_id, db=db)

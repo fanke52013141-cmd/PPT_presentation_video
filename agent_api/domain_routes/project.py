@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Annotated, Any, Optional
+import json
 from fastapi import Depends, Query, Request, HTTPException
 from sqlalchemy.orm import Session
 from database import get_db, Project
@@ -81,7 +82,13 @@ def agent_project_state(project_id: str, request: Request, db: Session = Depends
 
 def _project_summary(project: Project) -> ProjectSummary:
     """Build a ProjectSummary from a database Project."""
+    from canvas_profile_service import get_canvas_profile
+
     return ProjectSummary(
+        target_duration_sec=getattr(project, "target_duration_sec", None),
+        manual_pause_steps=json.loads(getattr(project, "manual_pause_steps", None) or "[]"),
+        image_style_template=getattr(project, "image_style_template", None) or "default",
+        canvas=get_canvas_profile(project.canvas_profile),
         project_id=project.id,
         name=project.name,
         description=project.description or "",
@@ -160,6 +167,7 @@ def agent_create_project(
             config_overrides=payload.config_overrides,
             course_id=payload.course_id,
             chapter_id=payload.chapter_id,
+            **payload.model_dump(include={"target_duration_sec", "manual_pause_steps", "image_style_template"}, exclude_unset=True),
         )
         result = service.create(internal_payload, db)
         project_id = result.get("project", {}).get("id", "")

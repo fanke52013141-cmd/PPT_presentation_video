@@ -107,7 +107,7 @@ CAPABILITIES = [
         mcp_enabled=False,
     ),
     _cap(
-        id="settings.config.export.secrets",
+        id="settings.config.export.secrets", version="1.1", behavior_version="2",
         description="Export the configuration package including secrets (JSON).",
         request_model=FreeFormRequest,
         agent_api_method="POST", agent_api_path="/api/agent/v1/config/export-with-secrets",
@@ -115,7 +115,7 @@ CAPABILITIES = [
         service_ref="settings_routes.export_full_config_with_secrets",
     ),
     _cap(
-        id="settings.config.export.secrets.zip",
+        id="settings.config.export.secrets.zip", version="1.1", behavior_version="2",
         description="Export the configuration package including secrets as a ZIP byte stream.",
         request_model=FreeFormRequest,
         agent_api_method="POST", agent_api_path="/api/agent/v1/config/export-with-secrets-zip",
@@ -142,7 +142,7 @@ CAPABILITIES = [
         mcp_enabled=False,
     ),
     _cap(
-        id="settings.llm.test",
+        id="settings.llm.test", version="1.1", behavior_version="2",
         description="Test the LLM connection with the supplied credentials; never stores them.",
         request_model=FreeFormRequest,
         agent_api_method="POST", agent_api_path="/api/agent/v1/settings/test-llm",
@@ -150,7 +150,7 @@ CAPABILITIES = [
         service_ref="settings_service.test_llm_connection",
     ),
     _cap(
-        id="settings.image.test",
+        id="settings.image.test", version="1.1", behavior_version="2",
         description="Test the image provider connection with the supplied credentials.",
         request_model=FreeFormRequest,
         agent_api_method="POST", agent_api_path="/api/agent/v1/settings/test-image",

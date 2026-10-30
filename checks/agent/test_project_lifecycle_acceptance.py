@@ -10,12 +10,13 @@ def test_project_fields_list_cas_state_account_isolation_and_delete(api):
 
     payload = {"name": "Project lifecycle " + uuid.uuid4().hex, "description": "Field parity",
         "canvas_profile": "portrait_9_16", "automation_mode": "manual",
-        "review_policy": "all_stages", "production_mode": "guided", "presentation_mode": "reveal"}
+        "review_policy": "all_stages", "production_mode": "guided", "presentation_mode": "reveal", "target_duration_sec": 120,
+        "manual_pause_steps": ["images", "annotation"], "image_style_template": "default"}
     created = invoke(api, "project.create", payload)
     assert created.status_code == 200, created.text
     summary = created.json()["project"]
     pid = summary["project_id"]
-    for key in ("name", "description", "canvas_profile", "review_policy", "production_mode", "presentation_mode"):
+    for key in ("name", "description", "canvas_profile", "review_policy", "production_mode", "presentation_mode", "target_duration_sec", "manual_pause_steps", "image_style_template"):
         assert summary[key] == payload[key]
     assert summary["ai_mode"] == "manual" and summary["mask_enabled"] is True
     detail = invoke(api, "project.get", {"project_id": pid})

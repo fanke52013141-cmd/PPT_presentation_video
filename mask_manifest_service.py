@@ -401,6 +401,7 @@ def refresh_reveal_semantic_blocks(
     # 整体回写，静默覆盖用户刚保存的手动 Mask（审查 H-03）。
     with _deps().reveal_lock_for(project):
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        original = json.dumps(manifest, ensure_ascii=False, sort_keys=True)
         contract = json.loads(contract_path.read_text(encoding="utf-8"))
         contract_slides = {
             str(slide.get("slide_id", "")).strip(): slide
@@ -444,7 +445,8 @@ def refresh_reveal_semantic_blocks(
                     manifest_slide.get("status") or "pending"
                 )
 
-        _deps().write_json_atomic(manifest_path, manifest)
+        if json.dumps(manifest, ensure_ascii=False, sort_keys=True) != original:
+            _deps().write_json_atomic(manifest_path, manifest)
     return manifest, len(target_slides)
 
 

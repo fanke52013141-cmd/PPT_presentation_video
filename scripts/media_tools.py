@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import os
+import json
+import math
 import shutil
 import subprocess
 from pathlib import Path
@@ -78,26 +80,52 @@ def probe_media_duration_sec(
     ffprobe = ffprobe_binary or resolve_media_tool("ffprobe", repo_root=repo_root)
     if not ffprobe:
         return None
-    result = subprocess.run(
-        [
-            ffprobe,
-            "-v",
-            "error",
-            "-show_entries",
-            "format=duration",
-            "-of",
-            "default=nw=1:nk=1",
-            str(path),
-        ],
-        text=True,
-        capture_output=True,
-        encoding="utf-8",
-        errors="replace",
-    )
+    try:
+        result = subprocess.run(
+            [
+                ffprobe,
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=nw=1:nk=1",
+                str(path),
+            ],
+            text=True,
+            capture_output=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=20,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
     if result.returncode != 0:
         return None
     try:
         duration = float(result.stdout.strip())
     except ValueError:
         return None
-    return duration if duration > 0 else None
+    return duration if math.isfinite(duration) and duration > 0 else None
+
+
+def probe_video_metadata(media_path: str | Path, *, repo_root: Path | None = None) -> dict | None:
+    """Require a decodable, finite-duration video stream with positive dimensions."""
+    ffprobe = resolve_media_tool("ffprobe", repo_root=repo_root)
+    if not ffprobe:
+        return None
+    try:
+        result = subprocess.run([ffprobe, "-v", "error", "-select_streams", "v:0",
+            "-show_entries", "stream=width,height:format=duration", "-of", "json", str(media_path)],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=20)
+        if result.returncode:
+            return None
+        value = json.loads(result.stdout)
+        stream = value["streams"][0]
+        duration = float(value["format"]["duration"])
+        width, height = int(stream["width"]), int(stream["height"])
+        if not math.isfinite(duration) or duration <= 0 or width <= 0 or height <= 0:
+            return None
+        return {"width": width, "height": height, "duration_sec": duration}
+    except (OSError, subprocess.TimeoutExpired, ValueError, KeyError, IndexError, TypeError):
+        return None

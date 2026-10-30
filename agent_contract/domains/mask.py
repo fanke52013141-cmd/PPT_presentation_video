@@ -50,7 +50,7 @@ CAPABILITIES = [
         long_running=True,
     ),
     AgentCapability(
-        id="mask.semantic_blocks", version="1.0", behavior_version="1",
+        id="mask.semantic_blocks", version="1.1", behavior_version="2",
         status=CapabilityStatus.stable,
         description="Read or normalize the Step 5 semantic blocks derived from the Reveal Manifest.",
         request_model=OptionalFreeFormRequest, response_model=BaseModel,

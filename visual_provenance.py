@@ -285,7 +285,7 @@ def write_visual_provenance(
     return payload
 
 
-def promote_candidate_provenance(run_dir: str | Path, slide_id: str) -> dict[str, Any] | None:
+def promote_candidate_provenance(run_dir: str | Path, slide_id: str, *, regional_repair: dict | None = None) -> dict[str, Any] | None:
     from pipeline_lifecycle import read_json_file, remove_file, write_json_atomic
 
     candidate_path = provenance_path(run_dir, slide_id, candidate=True)
@@ -294,6 +294,8 @@ def promote_candidate_provenance(run_dir: str | Path, slide_id: str) -> dict[str
         return None
     payload["copied_to"] = f"slides/{slide_id}/visual_draft.png"
     payload["promoted_at"] = datetime.now().isoformat(timespec="seconds")
+    if regional_repair is not None:
+        payload["regional_repair"] = regional_repair
     payload["output_sha256"] = sha256_file(slide_dir(run_dir, slide_id) / "visual_draft.png")
     write_json_atomic(provenance_path(run_dir, slide_id), payload)
     remove_file(candidate_path)

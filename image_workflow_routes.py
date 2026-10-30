@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from database import get_db
 import image_workflow_service as service
+from image_region_repair import ImageCandidateApplyPayload
 
 
 router = APIRouter()
@@ -143,10 +144,10 @@ def get_slide_candidate_file(
 @router.post("/api/projects/{project_id}/steps/3/apply-candidate")
 def apply_slide_candidate(
     project_id: str,
-    payload: dict[str, Any],
+    payload: ImageCandidateApplyPayload,
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    return service.apply_slide_candidate(project_id, payload, db)
+    return service.apply_slide_candidate(project_id, payload.model_dump(exclude_unset=True), db)
 
 
 @router.delete("/api/projects/{project_id}/steps/3/images")

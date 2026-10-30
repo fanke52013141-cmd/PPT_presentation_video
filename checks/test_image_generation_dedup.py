@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import nullcontext
 from pathlib import Path
 from types import SimpleNamespace
 import sys
@@ -42,6 +43,7 @@ def _project(tmp_path: Path) -> SimpleNamespace:
 
 
 def _stub_provider(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, project: SimpleNamespace, gate: threading.Event):
+    monkeypatch.setattr(images, "reveal_lock_for", lambda *_: nullcontext())
     calls: list[str] = []
     entered = threading.Event()
 
@@ -79,12 +81,17 @@ def _stub_provider(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, project: Sim
     monkeypatch.setattr(
         images, "enforce_white_image_region", lambda *_args, **_kwargs: {"nonwhite_ratio": 0.0, "cleared": False}
     )
-    monkeypatch.setattr(images, "get_project_canvas", lambda _project: {"width": 1920, "height": 1080})
+    from canvas_profile_service import get_canvas_profile
+    import image_layout_service
+    monkeypatch.setattr(images, "read_style_tokens_data", lambda: {})
+    monkeypatch.setattr(image_layout_service, "fit_generated_body_to_safe_area", lambda *_: False)
+    monkeypatch.setattr(images, "get_project_canvas", lambda _project: get_canvas_profile("landscape_16_9"))
     monkeypatch.setattr(images, "project_reference_paths", lambda _project: [])
     monkeypatch.setattr(images, "active_style_reference_paths", lambda: [])
     monkeypatch.setattr(images, "ip_character_reference_paths", lambda *_args: [])
     monkeypatch.setattr(images, "render_ip_character_prompt", lambda *_args: "")
     monkeypatch.setattr(images, "write_visual_provenance", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(images, "archive_current_slide_image", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(images, "mark_slide_image_changed", lambda *_args: None)
     return calls, entered
 

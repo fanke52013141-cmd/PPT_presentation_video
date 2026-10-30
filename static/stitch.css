@@ -7212,3 +7212,8 @@ body:not(.workspace-open) #page-home [data-bulk-project-id]:focus-visible {
   white-space: pre-line;
   overflow-wrap: anywhere;
 }
+
+/* Step 3 reviewed candidate repair, contained within the existing image modal. */
+#step3-preview-box { position: relative; }
+.step3-repair-control { align-items: center; gap: 8px; margin-right: auto; font-size: 13px; }
+.step3-repair-selection { display: none; position: absolute; border: 2px solid #ee5d36; background: #ee5d361a; pointer-events: none; box-sizing: border-box; }

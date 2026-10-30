@@ -96,7 +96,14 @@ def test_image_generation_uses_project_connection_and_redacts_credential_errors(
         "enforce_white_image_region",
         lambda *_args, **_kwargs: {"nonwhite_ratio": 0.0, "cleared": False},
     )
-    monkeypatch.setattr(images, "get_project_canvas", lambda _project: {"width": canvas_size[0], "height": canvas_size[1]})
+    from canvas_profile_service import get_canvas_profile
+    import image_layout_service
+    from contextlib import nullcontext
+    monkeypatch.setattr(images, "reveal_lock_for", lambda *_: nullcontext())
+    monkeypatch.setattr(images, "archive_current_slide_image", lambda *_args, **_kwargs: None)
+    profile = "landscape_16_9" if canvas_size[0] > canvas_size[1] else "portrait_9_16"
+    monkeypatch.setattr(image_layout_service, "fit_generated_body_to_safe_area", lambda *_: False)
+    monkeypatch.setattr(images, "get_project_canvas", lambda _project: get_canvas_profile(profile))
     monkeypatch.setattr(images, "project_reference_paths", lambda _project: [])
     monkeypatch.setattr(images, "active_style_reference_paths", lambda: [])
     monkeypatch.setattr(images, "ip_character_reference_paths", lambda *_args: [])

@@ -11,6 +11,8 @@ let step3ImageReassigning = false;
 let step3DraggedIndex = -1;
 let step3CandidateReady = false;
 let step3CandidateSlideId = '';
+let step3RepairRegion = null;
+let step3CandidateVersions = null;
 const step3GeneratingSlides = new Set();
 const step3UploadingSlides = new Set();
 let step3BatchGenerating = false;
@@ -24,6 +26,7 @@ let step3LoadError = '';
 let step3BatchStopRequested = false;
 
 function resetStep3ProjectState() {
+  resetStep3CandidateRepair();
   step3GeneratingSlides.clear();
   step3UploadingSlides.clear();
   step3BatchGenerating = false;
@@ -476,6 +479,7 @@ async function reorderStep3Images(draggedIdx, targetIdx) {
 }
 
 function openStep3AI(slideId) {
+  resetStep3CandidateRepair();
   state.activeSlideIndex = step3ImageOrder.findIndex(img => img.slide_id === slideId);
   step3CandidateReady = false;
   step3CandidateSlideId = '';
@@ -505,6 +509,7 @@ function openStep3AI(slideId) {
 window.openStep3AI = openStep3AI;
 
 function closeStep3AIModal() {
+  resetStep3CandidateRepair();
   document.getElementById('modal-step3-ai').style.display = 'none';
   step3CandidateReady = false;
   step3CandidateSlideId = '';
@@ -839,6 +844,7 @@ async function generateAllStep3Images() {
 
 // AI 生成单张候选图片，确认后才替换当前图片。
 async function generateStep3Image() {
+  const projectId = state.currentProject.id;
   const slideId = document.getElementById('step3-slide-id-label').innerText;
   const prompt = document.getElementById('step3-prompt-input').value.trim();
   
@@ -847,6 +853,7 @@ async function generateStep3Image() {
     return;
   }
 
+  resetStep3CandidateRepair();
   step3CandidateReady = false;
   step3CandidateSlideId = '';
   setStep3SlideGenerating(slideId, true);
@@ -863,11 +870,13 @@ async function generateStep3Image() {
     formData.append('slide_id', slideId);
     formData.append('prompt', prompt);
     formData.append('preview', 'true');
-    const res = await API.post(`/api/projects/${state.currentProject.id}/steps/3/generate`, formData);
+    const res = await API.post(`/api/projects/${projectId}/steps/3/generate`, formData);
+    if (state.currentProject?.id !== projectId) return;
     if (res.success) {
       const activeSlideId = document.getElementById('step3-slide-id-label').innerText;
       const modalOpen = document.getElementById('modal-step3-ai').style.display === 'flex';
       if (!modalOpen || activeSlideId !== slideId) return;
+      resetStep3CandidateRepair();
       step3CandidateReady = true;
       step3CandidateSlideId = slideId;
       generated = true;
@@ -876,48 +885,58 @@ async function generateStep3Image() {
       document.getElementById('step3-preview-box').innerHTML =
         `<img src="${res.candidate_url}" alt="${slideId} AI 候选图片">`;
       document.getElementById('step3-btn-apply-candidate').style.display = 'inline-flex';
+      bindStep3CandidateRepair(res);
     }
   } catch(e) {
+    if (state.currentProject?.id !== projectId) return;
     const busy = String(e?.message || '').includes('正在生成图片');
     showToast(busy ? `${slideId} 正在生成图片，请等待当前任务完成` : `${slideId} 图片生成失败`, 'error');
   } finally {
-    document.getElementById('step3-loading').style.display = 'none';
-    document.getElementById('step3-btn-generate').disabled = false;
-    setStep3SlideGenerating(slideId, false);
-    const activeSlideId = document.getElementById('step3-slide-id-label').innerText;
-    const modalOpen = document.getElementById('modal-step3-ai').style.display === 'flex';
-    if (!generated && modalOpen && activeSlideId === slideId) {
-      const image = step3ImageOrder.find(item => item.slide_id === slideId);
-      document.getElementById('step3-preview-label').innerText = '当前图片预览';
-      document.getElementById('step3-preview-box').innerHTML = image?.exists
-        ? `<img src="${image.url}" alt="${slideId} 当前图片">`
-        : '<span>暂无图片</span>';
+    if (state.currentProject?.id === projectId) {
+      document.getElementById('step3-loading').style.display = 'none';
+      document.getElementById('step3-btn-generate').disabled = false;
+      setStep3SlideGenerating(slideId, false);
+      const activeSlideId = document.getElementById('step3-slide-id-label').innerText;
+      const modalOpen = document.getElementById('modal-step3-ai').style.display === 'flex';
+      if (!generated && modalOpen && activeSlideId === slideId) {
+        const image = step3ImageOrder.find(item => item.slide_id === slideId);
+        document.getElementById('step3-preview-label').innerText = '当前图片预览';
+        document.getElementById('step3-preview-box').innerHTML = image?.exists
+          ? `<img src="${image.url}" alt="${slideId} 当前图片">`
+          : '<span>暂无图片</span>';
+      }
     }
   }
 }
 
 async function applyStep3Candidate() {
+  const projectId = state.currentProject.id;
+  const repairPayload = step3RegionalRepairPayload();
   const slideId = document.getElementById('step3-slide-id-label').innerText;
+  if (document.getElementById('step3-repair-only-region')?.checked && !step3RepairRegion) {
+    showToast('请先在候选图片上拖动框选修复区域。');
+    return;
+  }
   if (!step3CandidateReady || step3CandidateSlideId !== slideId) {
     showToast('请先生成一张候选图片。');
     return;
   }
   const impactChoice = await getStep3ReplacementVersion(slideId);
-  if (!impactChoice) return;
+  if (!impactChoice || state.currentProject?.id !== projectId) return;
   const applyButton = document.getElementById('step3-btn-apply-candidate');
   applyButton.disabled = true;
   try {
     const res = await API.post(
-      `/api/projects/${state.currentProject.id}/steps/3/apply-candidate`,
-      { slide_id: slideId, ...impactChoice }
+      `/api/projects/${projectId}/steps/3/apply-candidate`,
+      { slide_id: slideId, ...impactChoice, ...repairPayload }
     );
-    if (res.success) {
+    if (res.success && state.currentProject?.id === projectId) {
       await refreshStep3Images();
       await refreshCurrentProjectStatus(3);
       closeStep3AIModal();
     }
   } finally {
-    applyButton.disabled = false;
+    if (state.currentProject?.id === projectId) applyButton.disabled = false;
   }
 }
 
@@ -929,4 +948,76 @@ async function confirmStep3Images() {
     await refreshCurrentProjectStatus(5);
     navigateToStep(5);
   }
+}
+
+
+function resetStep3CandidateRepair() {
+  step3RepairRegion = null;
+  step3CandidateVersions = null;
+  const input = document.getElementById('step3-repair-only-region');
+  const control = document.getElementById('step3-repair-control');
+  if (input) input.checked = false;
+  if (control) control.style.display = 'none';
+  const label = document.getElementById('step3-apply-label');
+  if (label) label.textContent = '替换原图';
+  document.getElementById('step3-repair-selection')?.remove();
+}
+
+function step3RegionalRepairPayload() {
+  if (!document.getElementById('step3-repair-only-region')?.checked || !step3RepairRegion) return {};
+  return { regions: [step3RepairRegion], ...step3CandidateVersions };
+}
+
+function bindStep3CandidateRepair(result) {
+  if (!result.image_sha256 || !result.candidate_sha256) return;
+  const box = document.getElementById('step3-preview-box');
+  const img = box?.querySelector('img');
+  const input = document.getElementById('step3-repair-only-region');
+  const control = document.getElementById('step3-repair-control');
+  if (!img || !input || !control) return;
+  step3CandidateVersions = { expected_image_sha256: result.image_sha256, expected_candidate_sha256: result.candidate_sha256 };
+  control.style.display = 'flex';
+  const selection = document.createElement('div');
+  selection.id = 'step3-repair-selection';
+  selection.className = 'step3-repair-selection';
+  box.appendChild(selection);
+  let start = null;
+  function point(event) {
+    const rect = img.getBoundingClientRect();
+    const scale = Math.min(rect.width / img.naturalWidth, rect.height / img.naturalHeight);
+    if (!Number.isFinite(scale) || scale <= 0) return null;
+    const left = rect.left + (rect.width - img.naturalWidth * scale) / 2;
+    const top = rect.top + (rect.height - img.naturalHeight * scale) / 2;
+    return { x: Math.max(0, Math.min(img.naturalWidth, (event.clientX - left) / scale)),
+      y: Math.max(0, Math.min(img.naturalHeight, (event.clientY - top) / scale)), left, top, scale };
+  }
+  input.onchange = () => {
+    step3RepairRegion = null;
+    selection.style.display = 'none';
+    img.style.cursor = input.checked ? 'crosshair' : '';
+    img.style.touchAction = input.checked ? 'none' : '';
+    const label = document.getElementById('step3-apply-label');
+    if (label) label.textContent = input.checked ? '应用框选区域' : '替换原图';
+    if (input.checked) showToast('在候选图片上拖动框选区域，区域外保留原图。');
+  };
+  img.ondragstart = () => false;
+  img.onpointerdown = event => {
+    if (!input.checked || (event.pointerType === 'mouse' && event.button !== 0)) return;
+    start = point(event);
+    if (start) { event.preventDefault(); img.setPointerCapture(event.pointerId); }
+  };
+  img.onpointermove = event => {
+    if (!start) return;
+    const end = point(event);
+    if (!end) return;
+    const region = [Math.floor(Math.min(start.x, end.x)), Math.floor(Math.min(start.y, end.y)),
+      Math.ceil(Math.max(start.x, end.x)), Math.ceil(Math.max(start.y, end.y))];
+    step3RepairRegion = region[2] > region[0] && region[3] > region[1] ? region : null;
+    const parent = box.getBoundingClientRect();
+    Object.assign(selection.style, { display: step3RepairRegion ? 'block' : 'none',
+      left: `${end.left - parent.left + region[0] * end.scale}px`, top: `${end.top - parent.top + region[1] * end.scale}px`,
+      width: `${(region[2] - region[0]) * end.scale}px`, height: `${(region[3] - region[1]) * end.scale}px` });
+  };
+  img.onpointerup = () => { start = null; };
+  img.onpointercancel = () => { start = null; step3RepairRegion = null; selection.style.display = 'none'; };
 }

@@ -583,7 +583,7 @@ def _enforce_project_subtitle_safe_zone(
     *,
     source: str,
 ) -> None:
-    """Deterministically clear the required caption band after image writes."""
+    """Fit generated body content before enforcing the required caption band."""
     if not _project_requires_subtitle_safe_zone(project):
         logger.info(
             "Subtitle-safe zone is disabled for %s image: slide=%s; retaining the full PPT image.",
@@ -592,6 +592,11 @@ def _enforce_project_subtitle_safe_zone(
         )
         return
     canvas = get_project_canvas(project)
+    if source == "generated":
+        from image_layout_service import fit_generated_body_to_safe_area
+
+        if fit_generated_body_to_safe_area(image_path, canvas["content_safe_area"]):
+            logger.info("Generated bitmap fitted into safe area without clipping: slide=%s", slide_id)
     safe_zone = canvas.get("subtitle_safe_zone") or get_canvas_profile(
         getattr(project, "canvas_profile", None)
     )["subtitle_safe_zone"]
@@ -1478,6 +1483,8 @@ def _generate_slide_image_impl(
                     "reference_count": len(used_reference_paths),
                     "generation_attempts": attempts,
                     "candidate_url": f"/api/projects/{project_id}/slides/{slide_id}/candidate?t={uuid.uuid4().hex[:6]}",
+                    "candidate_sha256": sha256_file(live_path),
+                    "image_sha256": sha256_file(Path(live_path).with_name("visual_draft.png")),
                 }
             return {
                 "success": True,
@@ -1756,13 +1763,29 @@ def apply_slide_candidate(project_id: str, payload: Dict[str, Any], db: Session)
     if not os.path.exists(candidate_path):
         raise HTTPException(status_code=404, detail="候选图片不存在，请先生成")
 
-    same_visual = (
-        os.path.exists(image_path)
-        and sha256_file(candidate_path) == sha256_file(image_path)
-        and sha256_file(mask_source_raw_path(Path(candidate_path)))
-        == sha256_file(mask_source_raw_path(Path(image_path)))
-    )
-    with reveal_lock_for(project):
+    from image_region_repair import ImageCandidateApplyPayload, ImageRegionConflict, prepare_regional_candidate
+    from pydantic import ValidationError
+
+    try:
+        request = ImageCandidateApplyPayload.model_validate(payload)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=exc.errors(include_input=False, include_context=False)) from exc
+    with reveal_lock_for(project), tempfile.TemporaryDirectory(prefix="region-repair-", dir=Path(image_path).parent) as staging:
+        original_candidate = Path(candidate_path)
+        if request.regions:
+            try:
+                candidate_path = str(prepare_regional_candidate(image_path, candidate_path,
+                    Path(staging) / "visual_candidate.png", request))
+            except ImageRegionConflict as exc:
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+        same_visual = (
+            os.path.exists(image_path)
+            and sha256_file(candidate_path) == sha256_file(image_path)
+            and sha256_file(mask_source_raw_path(Path(candidate_path)))
+            == sha256_file(mask_source_raw_path(Path(image_path)))
+        )
         keep_derivatives = _check_image_change_choice(
             project, slide_id,
             str(payload.get("disposition") or "keep"),
@@ -1773,9 +1796,16 @@ def apply_slide_candidate(project_id: str, payload: Dict[str, Any], db: Session)
         os.replace(candidate_path, image_path)
         # A candidate without a raw pair must clear the old draft pair.
         rename_mask_source_pair(Path(candidate_path), Path(image_path))
-        promote_candidate_provenance(project.run_dir, slide_id)
+        repair_metadata = {"regional_repair": {
+            "regions": request.regions, "base_image_sha256": request.expected_image_sha256,
+            "candidate_sha256": request.expected_candidate_sha256,
+        }} if request.regions else {}
+        promote_candidate_provenance(project.run_dir, slide_id, **repair_metadata)
         if not same_visual:
             mark_slide_image_changed(project, slide_id, db)
+        if request.regions:
+            original_candidate.unlink(missing_ok=True)
+            remove_mask_source_pair(original_candidate)
     return {
         "success": True,
         "image_url": f"/api/projects/{project_id}/slides/{slide_id}/image?t={uuid.uuid4().hex[:6]}",

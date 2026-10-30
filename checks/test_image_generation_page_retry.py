@@ -78,7 +78,11 @@ def _stub_workflow(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, project: Sim
         images, "current_slide_file_or_404", lambda *_args: str(out_path)
     )
     monkeypatch.setattr(images, "get_openai_client", lambda **_kwargs: SimpleNamespace())
-    monkeypatch.setattr(images, "get_project_canvas", lambda _p: {"width": 1920, "height": 1080})
+    from canvas_profile_service import get_canvas_profile
+    import image_layout_service
+    monkeypatch.setattr(images, "read_style_tokens_data", lambda: {})
+    monkeypatch.setattr(image_layout_service, "fit_generated_body_to_safe_area", lambda *_: False)
+    monkeypatch.setattr(images, "get_project_canvas", lambda _p: get_canvas_profile("landscape_16_9"))
     monkeypatch.setattr(images, "project_reference_paths", lambda _p: [])
     monkeypatch.setattr(images, "active_style_reference_paths", lambda: [])
     monkeypatch.setattr(images, "ip_character_reference_paths", lambda *_a: [])

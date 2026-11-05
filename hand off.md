@@ -1,5 +1,36 @@
 # hand off
 
+## 2026-11-05 数字人动作迁移与对口型试验
+
+这项试验面向第 7 步的圆形讲师小窗，采用固定机位的真人或拟真人形象和已确认的中文旁白。状态为待上机验证。
+
+### 首选方案
+
+1. **每个讲师制备一次底片。** 有同一讲师的真人视频时，直接选取正面、动作自然的片段。只有头像时，用 LivePortrait 将参考视频的眨眼、轻微点头和表情迁移到头像上，先制备几段可重复使用的底片。用不同片段交替铺满旁白时长，检查接缝处的头部位置和表情。手势和肩部动作沿用真人底片，LivePortrait 主要处理头部与表情。[LivePortrait 动作模板](https://github.com/KlingAIResearch/LivePortrait#motion-template-making)
+2. **每节课用 MuseTalk 1.5 对口型。** 按官方建议用 25 fps 底片，先完成形象预处理，复用同一底片时关闭重复预处理。以第 5 步确认的旁白为音频输入。视频主体沿用底片，MuseTalk 单步重绘脸部局部区域。[MuseTalk 1.5 推理说明](https://github.com/TMElyralab/MuseTalk#real-time-inference)
+3. **离线跑样片并用现有入口合成。** 在测试项目中确认旁白，从「导出整段语音」取音频。生成时长匹配的讲师 MP4，在第 7 步选择「导入视频」，设置圆形窗口，再到第 8 步导出成片。使用同一项目配置对照现有 InfiniteTalk 样片。[第 7 步视频导入入口](static/index.html#L585) · [现有 InfiniteTalk 快速工作流](config/digital_human_lecturer_fast_workflow.json)
+
+### 回到目标机器后的实测步骤
+
+分别在独立的 Python 环境安装两个模型，准备 FFmpeg 后依次运行。LivePortrait 用于制备底片，后续可直接运行 MuseTalk 的预处理复用模式。[LivePortrait 安装](https://github.com/KlingAIResearch/LivePortrait/blob/main/readme.md#L65) · [MuseTalk Windows 推理](https://github.com/TMElyralab/MuseTalk#quickstart)
+
+1. 记录显卡、显存、系统和模型版本。先用约 8 秒的中文旁白验证模型和导入链路，再用约 30 秒的同一段课程旁白对照两条工作流。尽量保持讲师形象、裁切、输出时长和帧率一致，旁白包含正常语速、停顿和「不、怕、明」等闭唇音。
+2. 分开记录首次制备底片及预处理的时间、首次从音频到讲师 MP4 的时间，以及复用底片后从音频到讲师 MP4 的时间。复用时用同一底片再跑一段等长的旁白，两条工作流都用这段音频。每轮记录峰值显存，另记第 8 步合成耗时。
+3. 在成片的实际小窗尺寸下看闭唇音、停顿闭嘴、牙齿或嘴周闪烁、头部接缝和音画同步。确认翻页与字幕时间点正常，讲师画面覆盖整段测试旁白。小窗观感达到课程要求且复用后稳定省时，再接入自动流程。
+
+| 记录项 | InfiniteTalk 快速工作流 | LivePortrait 底片 + MuseTalk 1.5 |
+| --- | --- | --- |
+| 底片制备与形象预处理 | 待记录 | 待记录 |
+| 首次及复用后的讲师 MP4 耗时 | 待记录 | 待记录 |
+| 峰值显存与第 8 步合成耗时 | 待记录 | 待记录 |
+| 实际小窗口型与动作接缝 | 待记录 | 待记录 |
+
+### 性能参考与备选
+
+- 本次调研机器检测到 RTX 3050 Laptop，约 4 GB 显存。MuseTalk 官方在 Windows 的 4 GB RTX 3050 Ti 上用 Gradio 和 FP16 处理 8 秒视频约需 5 分钟。官方的 30+ fps 来自 V100 上完成预处理后的推理。目标机器的实际提速倍数留待上面的对照试验。[MuseTalk 官方测试](https://github.com/TMElyralab/MuseTalk#gradio-demo)
+- **PC-Talk** 可作为一体化对照，支持头像、参考动作、旁白和口型幅度控制。用于商业课程前需替换随附的非商业 InsightFace 权重，并核对其他权重条款。首选方案的动作迁移也可用 ComfyUI-LivePortraitKJ 的 MediaPipe 检测器替代默认 InsightFace 权重。[PC-Talk 官方用法](https://github.com/BQ-Wang0511/PC-Talk#image-driven-example) · [PC-Talk 权重条款](https://github.com/BQ-Wang0511/PC-Talk/blob/main/THIRD_PARTY_NOTICES.md) · [LivePortrait 检测器选项](https://github.com/kijai/ComfyUI-LivePortraitKJ#face-detectors)
+- **LatentSync 1.6 和 TBDub Student** 适合在高显存机器上做画质对照。LatentSync 1.6 官方最低推理显存为 18 GB。TBDub 官方提供两步版和 CPU 卸载测试数据。[LatentSync 硬件要求](https://github.com/bytedance/LatentSync#setup) · [TBDub 显存测试](https://github.com/TaoLiveAIGC/TBDub#cpu-offload)
+
 ## 配置体系、创作流程与 Agent 对接代码审查报告
 
 - 审查日期：2026-09-16。

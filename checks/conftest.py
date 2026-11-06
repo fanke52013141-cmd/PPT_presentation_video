@@ -47,6 +47,9 @@ if not os.environ.get("PPT_STUDIO_RUNS_DIR"):
 
 # 业务数据目录（创作配置包、全局风格、模板等）同样不落用户真实 data/。
 os.environ.setdefault("PPT_STUDIO_DATA_DIR", os.path.join(_TEMP_DIRECTORY.name, "data"))
+os.environ.setdefault("PPT_DIGITAL_HUMAN_DATA_DIR", os.path.join(
+    os.environ["PPT_STUDIO_DATA_DIR"], "digital_human",
+))
 
 # The persistent API limiter must also stay out of the user's real data and
 # out of other concurrently running pytest sessions.

@@ -581,12 +581,12 @@
                 <div class="dh-field">
                   <div class="dh-field-label">① 数字人生成方式</div>
                   <div class="dh-mode-toggle">
-                    <button type="button" id="dh-tab-comfyui" class="dh-tab-btn dh-tab-active" style="flex:1;">ComfyUI 生成</button>
-                    <button type="button" id="dh-tab-upload" class="dh-tab-btn" style="flex:1;">导入视频</button>
+                    <button type="button" id="dh-tab-comfyui" class="dh-tab-btn dh-tab-active" style="flex:1;">照片 + 动作视频</button>
+                    <button type="button" id="dh-tab-upload" class="dh-tab-btn" style="flex:1;">直接上传视频</button>
                   </div>
                   <!-- ComfyUI 模式面板 -->
                   <div id="dh-mode-panel-comfyui">
-                    <div style="margin-bottom:0.6rem;">
+                    <div hidden style="margin-bottom:0.6rem;">
                       <label class="btn secondary dh-upload-btn" style="width:100%;">
                         上传工作流 JSON
                         <input type="file" id="dh-comfyui-workflow-file" accept=".json" style="display:none;">
@@ -598,7 +598,18 @@
                       <input type="file" id="dh-comfyui-avatar-file" accept="image/*" style="display:none;">
                     </label>
                     <span id="dh-comfyui-avatar-status" class="dh-drag-hint" style="display:block; margin-top:0.3rem;">未上传形象图片</span>
-                    <button id="dh-btn-generate-all" class="success" style="width:100%; margin-top:0.8rem;">生成全部页数字人</button>
+                    <label for="dh-motion-source" class="dh-field-label" style="margin-top:0.8rem;">动作视频</label>
+                    <select id="dh-motion-source" style="width:100%;">
+                      <option value="default">平台默认讲课动作</option>
+                      <option value="custom">我上传的动作视频</option>
+                    </select>
+                    <label class="btn secondary dh-upload-btn" style="width:100%; margin-top:0.5rem;">
+                      上传自定义动作视频
+                      <input type="file" id="dh-motion-file" accept="video/mp4,video/quicktime,video/webm,video/x-matroska" style="display:none;">
+                    </label>
+                    <span id="dh-motion-status" class="dh-drag-hint" role="status" style="display:block; margin-top:0.3rem;">正在检查动作模板</span>
+                    <p class="dh-drag-hint">照片决定讲师形象，视频提供眨眼、点头和表情；使用第 5 步确认的旁白生成口型。首次制作后可复用讲师底片。</p>
+                    <button id="dh-btn-generate-all" class="success" style="width:100%; margin-top:0.8rem;">生成整段讲师视频</button>
                   </div>
                   <!-- 导入视频模式面板 -->
                   <div id="dh-mode-panel-upload" style="display:none;">
@@ -607,8 +618,15 @@
                       <input type="file" id="dh-upload-video-file" accept="video/*" style="display:none;">
                     </label>
                     <span id="dh-upload-video-status" class="dh-drag-hint" style="display:block; margin-top:0.3rem;">未上传</span>
+                    <label for="dh-upload-start" class="dh-field-label" style="margin-top:0.6rem;">从第几秒开始使用</label>
+                    <input id="dh-upload-start" type="number" min="0" step="0.1" value="0" style="width:100%;">
+                    <label for="dh-upload-short-policy" class="dh-field-label" style="margin-top:0.6rem;">视频短于课程时</label>
+                    <select id="dh-upload-short-policy" style="width:100%;">
+                      <option value="reject">停止合成，提示更换视频</option>
+                      <option value="loop">循环播放（接缝和口型可能重复）</option>
+                    </select>
                     <div class="dh-drag-hint" style="margin-top:0.6rem;">
-                      先用 HeyGem / Wan2.2 等工具离线生成讲师讲解视频，再上传到此处。导出整段语音后可用于离线生成。
+                      上传与当前课程旁白对应的成品视频，直接用于合成，不再迁移或修改口型。视频原声关闭，使用第 5 步确认的课程旁白。
                     </div>
                   </div>
                   <div id="dh-slide-status" class="dh-slide-status"></div>

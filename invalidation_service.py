@@ -376,6 +376,17 @@ def digital_human_changed(project: Any) -> InvalidationReport:
     )
 
 
+def digital_human_source_changed(project: Any) -> InvalidationReport:
+    """Retain generated presenters while requiring their source to be reviewed."""
+    removed = _existing_removals(project.run_dir, clear_audio=False, clear_props=True)
+    statuses = project.get_step_status()
+    mark_selected_stale(statuses, (8,))
+    project.set_step_status(statuses)
+    _record_content_impact(project, "digital_human_source_changed")
+    return InvalidationReport(reason="digital_human_source_changed", affected_steps=(8,),
+                              removed_paths=tuple(removed))
+
+
 def digital_human_full_audio_changed(project: Any) -> InvalidationReport:
     """Keep old presenter media but reject a full clip bound to different audio."""
     path = planning_path(project.run_dir, "digital_human.json")

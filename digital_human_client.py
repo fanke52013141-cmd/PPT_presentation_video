@@ -142,12 +142,16 @@ class DigitalHumanClient:
         border: Optional[Dict[str, Any]] = None,
         video: Optional[Dict[str, Any]] = None,
         shape: str = "circle",
+        start_sec: float = 0,
+        short_video_policy: str = "reject",
     ) -> Dict[str, Any]:
         payload: Dict[str, Any] = {
             "digi_video": str(digi_video),
             "output": str(output),
             "circle": circle,
             "shape": shape,
+            "start_sec": start_sec,
+            "short_video_policy": short_video_policy,
         }
         if base_video:
             payload["base_video"] = str(base_video)

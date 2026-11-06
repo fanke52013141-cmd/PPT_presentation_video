@@ -40,7 +40,12 @@ router = APIRouter()
 
 DIGI_DIRNAME = "digital_human"
 CONFIG_FILENAME = "digital_human.json"
-from digital_human_contracts import DEFAULT_CIRCLE
+from digital_human_contracts import DEFAULT_CIRCLE, digital_human_render_config
+from digital_human_source_service import (
+    generation_source_fingerprint, motion_path, motion_summary,
+    presenter_source_stale, presenter_audio_stale, published_audio_hash, save_motion_video,
+    project_avatars, register_project_avatar,
+)
 
 # ---- 上传安全限制 ----
 MAX_UPLOAD_VIDEO_BYTES = int(
@@ -144,7 +149,10 @@ def _config_path(project: Project) -> Path:
 def _default_config() -> Dict[str, Any]:
     return {
         "enabled": False,
-        "mode": "comfyui",  # 'comfyui' ComfyUI 生成 | 'upload' 导入已生成视频
+        "mode": "portrait",  # 照片 + 动作视频 | upload 成品视频
+        "motion_source": "default",
+        "upload_start_sec": 0.0,
+        "upload_short_video_policy": "reject",
         "shape": "circle",  # 窗口形状 'circle' | 'rect'
         "avatar_id": "",
         "sync_mode": "accurate",
@@ -168,36 +176,13 @@ def _load_config(project: Project) -> Dict[str, Any]:
         cfg["video"] = {"ox": 0.5, "oy": 0.5, "zoom": 1.0}
     if cfg.get("shape") not in ("circle", "rect"):
         cfg["shape"] = "circle"
-    if cfg.get("mode") not in ("comfyui", "upload", "generate"):
-        cfg["mode"] = "comfyui"
+    if cfg.get("mode") not in ("portrait", "comfyui", "upload", "generate"):
+        cfg["mode"] = "portrait"
     return cfg
 
 
 def _save_config(project: Project, cfg: Dict[str, Any]) -> None:
     write_json_atomic(_config_path(project), cfg)
-
-
-_RENDER_CONFIG_KEYS = (
-    "enabled",
-    "mode",
-    "shape",
-    "circle",
-    "video",
-    "position",
-    "border",
-)
-
-
-def digital_human_render_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
-    """Return the persisted settings consumed by final MP4 composition.
-
-    Avatar selection, lip-sync mode, and per-slide generation-job metadata
-    only influence future presenter generation.  They must not mark an
-    already rendered MP4 as needing a new composition.
-    """
-    if not cfg.get("enabled"):
-        return {"enabled": False}
-    return {key: cfg.get(key) for key in _RENDER_CONFIG_KEYS}
 
 
 def digital_human_render_config_changed(
@@ -224,7 +209,22 @@ def update_digital_human_config(project: Project, payload: Dict[str, Any]) -> Di
     """
     previous = _load_config(project)
     cfg = _load_config(project)
-    for key in ("enabled", "mode", "shape", "avatar_id", "sync_mode", "position", "border"):
+    if "mode" in payload and payload["mode"] not in ("portrait", "comfyui", "upload", "generate"):
+        raise HTTPException(status_code=400, detail="不支持的数字人模式")
+    if "motion_source" in payload and payload["motion_source"] not in ("default", "custom"):
+        raise HTTPException(status_code=400, detail="动作来源必须为 default 或 custom")
+    if "upload_short_video_policy" in payload and payload["upload_short_video_policy"] not in ("reject", "loop"):
+        raise HTTPException(status_code=400, detail="短视频处理必须为 reject 或 loop")
+    if "upload_start_sec" in payload:
+        import math
+        try:
+            start = float(payload["upload_start_sec"])
+            if not math.isfinite(start) or start < 0:
+                raise ValueError()
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail="视频起点必须为非负秒数") from exc
+        payload = {**payload, "upload_start_sec": start}
+    for key in ("enabled", "mode", "motion_source", "upload_start_sec", "upload_short_video_policy", "shape", "avatar_id", "sync_mode", "position", "border"):
         if key in payload:
             cfg[key] = payload[key]
     if cfg.get("shape") not in ("circle", "rect"):
@@ -248,11 +248,17 @@ def update_digital_human_config_with_impact(
     project: Project, payload: Dict[str, Any], db: Session,
 ) -> Dict[str, Any]:
     """Use the same impact decision for web and Agent configuration writes."""
-    previous = _load_config(project)
-    cfg = update_digital_human_config(project, payload)
-    if digital_human_render_config_changed(previous, cfg):
-        _mark_digital_human_output_changed(project, db)
-    return cfg
+    with project_artifact_lock(project.run_dir):
+        previous = _load_config(project)
+        cfg = update_digital_human_config(project, payload)
+        if (cfg.get("enabled") and cfg.get("mode") == "portrait" and
+                generation_source_fingerprint(project.run_dir, previous) != generation_source_fingerprint(project.run_dir, cfg)):
+            from invalidation_service import digital_human_source_changed
+            digital_human_source_changed(project)
+            db.commit()
+        elif digital_human_render_config_changed(previous, cfg):
+            _mark_digital_human_output_changed(project, db)
+        return cfg
 
 
 _SLIDE_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
@@ -345,14 +351,15 @@ def get_dh_config(project_id: str, db: Session = Depends(get_db)) -> Dict[str, A
         item = cfg.get("slides", {}).get(slide_id, {})
         audio_ok = _slide_audio_path(project, slide_id).exists()
         video_exists = _slide_digi_path(project, slide_id).exists()
-        stored_hash = str(item.get("audio_sha256") or "")
+        stored_hash = published_audio_hash(item)
         slides_info[slide_id] = {
             "job_id": item.get("job_id"),
             "status": item.get("status"),
             "video_exists": video_exists,
             "audio_ready": audio_ok,
             "video_stale": bool(
-                item.get("status") == "stale_audio"
+                (video_exists and presenter_source_stale(project.run_dir, cfg, item))
+                or item.get("status") == "stale_audio"
                 or (video_exists and stored_hash
                     and stored_hash != _digi_audio_hash(project, slide_id))
             ),
@@ -362,14 +369,15 @@ def get_dh_config(project_id: str, db: Session = Depends(get_db)) -> Dict[str, A
     full_item = cfg.get("slides", {}).get("full", {})
     if full_item:
         full_exists = _slide_digi_path(project, "full").exists()
-        full_stored = str(full_item.get("audio_sha256") or "")
+        full_stored = published_audio_hash(full_item)
         slides_info["full"] = {
             "job_id": full_item.get("job_id"),
             "status": full_item.get("status"),
             "video_exists": full_exists,
             "audio_ready": _full_audio_path(project).exists(),
             "video_stale": bool(
-                full_item.get("status") == "stale_audio"
+                (full_exists and presenter_source_stale(project.run_dir, cfg, full_item))
+                or full_item.get("status") == "stale_audio"
                 or (full_exists and full_stored
                     and full_stored != _digi_audio_hash(project, "full"))
             ),
@@ -379,6 +387,9 @@ def get_dh_config(project_id: str, db: Session = Depends(get_db)) -> Dict[str, A
         "config": {
             "enabled": cfg.get("enabled"),
             "mode": cfg.get("mode"),
+            "motion_source": cfg.get("motion_source"),
+            "upload_start_sec": cfg.get("upload_start_sec"),
+            "upload_short_video_policy": cfg.get("upload_short_video_policy"),
             "shape": cfg.get("shape"),
             "avatar_id": cfg.get("avatar_id"),
             "sync_mode": cfg.get("sync_mode"),
@@ -395,7 +406,35 @@ def get_dh_config(project_id: str, db: Session = Depends(get_db)) -> Dict[str, A
         "audio_ready_count": audio_ready_count,
         "total_slides": len(contract_ids),
         "upload_video_exists": _upload_digi_path(project).exists(),
+        "motion": motion_summary(project.run_dir, str(cfg.get("motion_source") or "default")),
     }
+
+
+@router.post("/api/projects/{project_id}/digital-human/motion")
+async def upload_dh_motion(
+    project_id: str, file: UploadFile = File(...), db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    project = _project_or_404(db, project_id)
+    content = await file.read(MAX_AVATAR_UPLOAD_BYTES + 1)
+    _validate_upload(content, file, MAX_AVATAR_UPLOAD_BYTES, ALLOWED_VIDEO_MIMES)
+    _validate_video_extension(file.filename)
+    with project_artifact_lock(project.run_dir):
+        previous = _load_config(project)
+        previous_source = generation_source_fingerprint(project.run_dir, previous)
+        try:
+            changed = save_motion_video(project.run_dir, content)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        cfg = dict(previous)
+        cfg["motion_source"] = "custom"
+        if cfg != previous:
+            _save_config(project, cfg)
+        if (cfg.get("enabled") and cfg.get("mode") == "portrait" and
+                previous_source != generation_source_fingerprint(project.run_dir, cfg)):
+            from invalidation_service import digital_human_source_changed
+            digital_human_source_changed(project)
+            db.commit()
+    return {"success": True, "changed": changed, "motion": motion_summary(project.run_dir, "custom")}
 
 
 @router.put("/api/projects/{project_id}/digital-human/config")
@@ -496,13 +535,19 @@ async def upload_dh_avatar(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
-    _project_or_404(db, project_id)
+    project = _project_or_404(db, project_id)
     client = get_digital_human_client()
     content = await file.read(MAX_AVATAR_UPLOAD_BYTES + 1)
     # ComfyUI/InfiniteTalk 使用单张人物图；旧的 Wan/LatentSync 工作流
     # 仍可上传视频，因此这里使用头像专用的“图片 + 视频”白名单。
     _validate_upload(content, file, MAX_AVATAR_UPLOAD_BYTES, ALLOWED_AVATAR_MIMES)
     _validate_avatar_extension(file.filename)
+    digest = sha256_bytes(content)
+    with project_artifact_lock(project.run_dir):
+        reusable = next((avatar for avatar, saved_hash in project_avatars(project.run_dir).items()
+                         if saved_hash == digest), None)
+    if reusable:
+        return {"success": True, "avatar_id": reusable, "name": name, "reused": True}
     import tempfile
 
     with tempfile.NamedTemporaryFile(
@@ -512,7 +557,11 @@ async def upload_dh_avatar(
         tmp.write(content)
         tmp_path = Path(tmp.name)
     try:
-        return client.upload_avatar(name, tmp_path)
+        result = client.upload_avatar(name, tmp_path)
+        if result.get("avatar_id"):
+            with project_artifact_lock(project.run_dir):
+                register_project_avatar(project.run_dir, result["avatar_id"], digest)
+        return result
     except DigitalHumanUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc))
     except Exception as exc:
@@ -527,10 +576,12 @@ async def upload_dh_avatar(
 
 @router.get("/api/projects/{project_id}/digital-human/avatars")
 def list_dh_avatars(project_id: str, db: Session = Depends(get_db)) -> Dict[str, Any]:
-    _project_or_404(db, project_id)
+    project = _project_or_404(db, project_id)
     client = get_digital_human_client()
     try:
-        return {"success": True, "avatars": client.list_avatars()}
+        owned = project_avatars(project.run_dir)
+        return {"success": True, "avatars": [avatar for avatar in client.list_avatars()
+                                             if avatar.get("avatar_id") in owned]}
     except DigitalHumanUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc))
 
@@ -612,121 +663,77 @@ def get_comfyui_workflow(
 # ---------------- 生成任务（手动触发） ----------------
 
 
-@router.post("/api/projects/{project_id}/digital-human/generate/{slide_id}")
-def generate_dh(
-    project_id: str,
-    slide_id: str,
-    payload: Optional[Dict[str, Any]] = None,
-    db: Session = Depends(get_db),
-) -> Dict[str, Any]:
-    project = _project_or_404(db, project_id)
-    cfg = _load_config(project)
-    avatar_id = str(
-        (payload or {}).get("avatar_id") or cfg.get("avatar_id") or ""
-    ).strip()
-    if not avatar_id:
-        raise HTTPException(status_code=400, detail="请先上传并选择数字人形象")
-    sync_mode = str((payload or {}).get("sync_mode") or cfg.get("sync_mode") or "accurate")
+def _add_portrait_source(project: Project, cfg: Dict[str, Any], job_payload: Dict[str, Any]) -> None:
+    if cfg.get("mode") != "portrait":
+        return
+    from tts_artifacts import is_audio_confirmed
+    if not is_audio_confirmed(project.run_dir, read_contract_slide_ids(project.run_dir)):
+        raise HTTPException(status_code=409, detail="请先在第 5 步确认课程旁白音频")
+    driving = motion_path(project.run_dir, str(cfg.get("motion_source") or "default"))
+    if not driving.is_file():
+        raise HTTPException(status_code=409, detail="请上传动作视频或安装默认动作模板")
+    job_payload.update(backend="portrait", driving_path=str(driving.resolve()))
 
-    audio_path = _slide_audio_path(project, slide_id)
-    if not audio_path.exists():
-        raise HTTPException(status_code=400, detail="当前页面音频未生成，请先完成旁白合成")
 
+def _submit_dh(project: Project, slide_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    from digital_human_job_submission import PresenterSubmissionDependencies, submit_presenter_job
     client = get_digital_human_client()
-    # 构建 create_job payload，附加 ComfyUI 专用字段
-    job_payload: Dict[str, Any] = {
-        "avatar_id": avatar_id,
-        "audio_path": str(audio_path),
-        "slide_id": slide_id,
-        "sync_mode": sync_mode,
-    }
-    if cfg.get("mode") == "comfyui":
-        job_payload["backend"] = "comfyui"
-        # 附带工作流模板（如有）；画质参数由工作流 JSON 自身决定
-        workflow_template = _read_comfyui_workflow_template(project)
-        if workflow_template is not None:
-            job_payload["workflow_template"] = workflow_template
-
+    def build(cfg):
+        if cfg.get("mode") == "upload":
+            raise HTTPException(status_code=409, detail="成品视频模式无需模型生成，请直接上传视频")
+        avatar = str(payload.get("avatar_id") or cfg.get("avatar_id") or "").strip()
+        if not avatar:
+            raise HTTPException(status_code=400, detail="请先上传并选择讲师照片")
+        if avatar not in project_avatars(project.run_dir):
+            raise HTTPException(status_code=403, detail="讲师形象不属于当前项目，请在本项目上传照片")
+        if cfg.get("mode") == "portrait" and avatar != cfg.get("avatar_id"):
+            raise HTTPException(status_code=409, detail="请先保存讲师照片选择，再生成视频")
+        audio = _full_audio_path(project) if slide_id == "full" else _slide_audio_path(project, slide_id)
+        if slide_id == "full":
+            from digital_human_audio_service import full_audio_current
+            if not full_audio_current(project.run_dir):
+                raise HTTPException(status_code=409, detail="整段语音缺失或已过期，请重新导出整段语音")
+        if not audio.is_file():
+            raise HTTPException(status_code=400, detail="旁白音频未生成")
+        body = {"avatar_id": avatar, "audio_path": str(audio), "slide_id": slide_id,
+                "sync_mode": str(payload.get("sync_mode") or cfg.get("sync_mode") or "accurate")}
+        if cfg.get("mode") == "comfyui":
+            body["backend"] = "comfyui"
+            template = _read_comfyui_workflow_template(project)
+            if template is not None:
+                body["workflow_template"] = template
+        _add_portrait_source(project, cfg, body)
+        return body
     try:
-        result = client.create_job(payload=job_payload)
+        result = submit_presenter_job(project.run_dir, slide_id, PresenterSubmissionDependencies(
+            read_config=lambda: _load_config(project), write_config=lambda cfg: _save_config(project, cfg),
+            build_payload=build, create_job=lambda body: client.create_job(payload=body),
+            impact_snapshot=lambda: snapshot_impacts(project.run_dir,
+                affected=("digital human media",), slide_ids=(slide_id,)),
+        ))
     except DigitalHumanUnavailable as exc:
-        raise HTTPException(status_code=503, detail=str(exc))
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except Exception as exc:
-        logger.exception("[dh-generate] create_job failed")
-        raise HTTPException(status_code=500, detail=f"提交数字人生成任务失败: {exc}")
-
-    job_id = result.get("job_id")
-    if job_id:
-        slides = cfg.setdefault("slides", {})
-        slides.setdefault(slide_id, {})
-        slides[slide_id]["job_id"] = job_id
-        slides[slide_id]["status"] = result.get("status")
-        slides[slide_id]["audio_sha256"] = _digi_audio_hash(project, slide_id)
-        slides[slide_id]["impact_snapshot"] = snapshot_impacts(
-            project.run_dir, affected=("digital human media",), slide_ids=(slide_id,),
-        )
-        _save_config(project, cfg)
-    return {"success": True, "job_id": job_id, "status": result.get("status")}
+        raise HTTPException(status_code=500, detail=f"提交数字人任务未确认，请核对同一任务状态：{exc}") from exc
+    return {"success": True, "job_id": result.get("job_id"), "status": result.get("status")}
 
 
-# ---------------- 生成整段数字人视频（单任务） ----------------
+@router.post("/api/projects/{project_id}/digital-human/generate/{slide_id}")
+def generate_dh(project_id: str, slide_id: str, payload: Optional[Dict[str, Any]] = None,
+                db: Session = Depends(get_db)) -> Dict[str, Any]:
+    project = _project_or_404(db, project_id)
+    _assert_safe_slide_id(slide_id)
+    return _submit_dh(project, slide_id, payload or {})
 
 
 @router.post("/api/projects/{project_id}/digital-human/generate-full")
-def generate_dh_full(
-    project_id: str,
-    payload: Optional[Dict[str, Any]] = None,
-    db: Session = Depends(get_db),
-) -> Dict[str, Any]:
-    """使用整段导出音频创建一个数字人生成任务（合并所有页面音频为一段）。"""
-    project = _project_or_404(db, project_id)
-    cfg = _load_config(project)
-    avatar_id = str(
-        (payload or {}).get("avatar_id") or cfg.get("avatar_id") or ""
-    ).strip()
-    if not avatar_id:
-        raise HTTPException(status_code=400, detail="请先上传并选择数字人形象")
-
-    audio_path = _full_audio_path(project)
-    from digital_human_audio_service import full_audio_current
-    if not full_audio_current(project.run_dir):
-        raise HTTPException(status_code=409, detail="整段语音缺失或已过期，请重新导出整段语音")
-
-    sync_mode = str((payload or {}).get("sync_mode") or cfg.get("sync_mode") or "accurate")
-    client = get_digital_human_client()
-    job_payload: Dict[str, Any] = {
-        "avatar_id": avatar_id,
-        "audio_path": str(audio_path),
-        "slide_id": "full",
-        "sync_mode": sync_mode,
-    }
-    if cfg.get("mode") == "comfyui":
-        job_payload["backend"] = "comfyui"
-        workflow_template = _read_comfyui_workflow_template(project)
-        if workflow_template is not None:
-            job_payload["workflow_template"] = workflow_template
-
-    try:
-        result = client.create_job(payload=job_payload)
-    except DigitalHumanUnavailable as exc:
-        raise HTTPException(status_code=503, detail=str(exc))
-    except Exception as exc:
-        logger.exception("[dh-generate-full] create_job failed")
-        raise HTTPException(status_code=500, detail=f"提交数字人生成任务失败: {exc}")
-
-    job_id = result.get("job_id")
-    if job_id:
-        slides = cfg.setdefault("slides", {})
-        slides["full"] = {
-            "job_id": job_id,
-            "status": result.get("status"),
-            "audio_sha256": _digi_audio_hash(project, "full"),
-            "impact_snapshot": snapshot_impacts(
-                project.run_dir, affected=("digital human media",), slide_ids=("full",),
-            ),
-        }
-        _save_config(project, cfg)
-    return {"success": True, "job_id": job_id, "status": result.get("status")}
+def generate_dh_full(project_id: str, payload: Optional[Dict[str, Any]] = None,
+                     db: Session = Depends(get_db)) -> Dict[str, Any]:
+    return _submit_dh(_project_or_404(db, project_id), "full", payload or {})
 
 
 @router.get("/api/projects/{project_id}/digital-human/jobs/{job_id}")
@@ -735,7 +742,10 @@ def get_dh_job(
     job_id: str,
     db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
-    _project_or_404(db, project_id)
+    project = _project_or_404(db, project_id)
+    owned_entries = (_load_config(project).get("slides") or {}).values()
+    if not any(isinstance(entry, dict) and entry.get("job_id") == job_id for entry in owned_entries):
+        raise HTTPException(status_code=404, detail="当前项目不存在此数字人任务")
     client = get_digital_human_client()
     try:
         job = client.get_job(job_id)
@@ -750,31 +760,47 @@ def get_dh_job(
         project = _project_or_404(db, project_id)
         slide_id = job.get("slide_id")
         if slide_id:
-            cfg = _load_config(project)
-            item = cfg.setdefault("slides", {}).setdefault(slide_id, {})
-            if str(item.get("job_id") or "") != job_id:
-                return {"success": True, "job": {**job, "stale": True}}
-            if str(item.get("audio_sha256") or "") != _digi_audio_hash(project, slide_id):
-                item["status"] = "stale_audio"
+            with project_artifact_lock(project.run_dir):
+                cfg = _load_config(project)
+                item = cfg.setdefault("slides", {}).setdefault(slide_id, {})
+                if str(item.get("job_id") or "") != job_id:
+                    return {"success": True, "job": {**job, "stale": True}}
+                if presenter_source_stale(project.run_dir, cfg, item, pending=True):
+                    return {"success": True, "job": {**job, "stale": True, "video_exists": False}}
+                if str(item.get("audio_sha256") or "") != _digi_audio_hash(project, slide_id):
+                    return {"success": True, "job": {**job, "stale": True, "video_exists": False}}
+                if ((item.get("published") or {}).get("job_id") == job_id
+                        and _slide_digi_path(project, slide_id).is_file()):
+                    return {"success": True, "job": {**job, "video_exists": True}}
+                item["status"] = job_status if job_status == "failed" else "publishing"
                 _save_config(project, cfg)
-                return {"success": True, "job": {**job, "stale": True, "video_exists": False}}
-            item["status"] = job_status
             if job_status == "done":
+                published = False
                 dest = _slide_digi_path(project, slide_id)
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 temporary = dest.with_name(f".{dest.stem}-{uuid.uuid4().hex}.tmp.mp4")
                 try:
                     client.download_result(job_id, temporary)
+                    if not probe_video_metadata(temporary, repo_root=REPO_ROOT):
+                        raise ValueError("数字人服务返回的视频无法解码")
                     with project_artifact_lock(project.run_dir):
                         latest = _load_config(project)
                         latest_item = (latest.get("slides") or {}).get(slide_id) or {}
                         if (str(latest_item.get("job_id") or "") != job_id
+                                or presenter_source_stale(project.run_dir, latest, latest_item, pending=True)
                                 or str(latest_item.get("audio_sha256") or "") != _digi_audio_hash(project, slide_id)):
                             job = {**job, "stale": True}
                         else:
                             os.replace(temporary, dest)
                             latest_item["status"] = "done"
+                            latest_item["published"] = {
+                                "job_id": job_id,
+                                "audio_sha256": latest_item.get("audio_sha256"),
+                                "source_sha256": latest_item.get("source_sha256"),
+                            }
+                            latest_item.pop("pending_request", None)
                             _save_config(project, latest)
+                            published = True
                             resolve_impacts(
                                 project.run_dir,
                                 affected=("digital human media",),
@@ -790,9 +816,9 @@ def get_dh_job(
                         temporary.unlink()
                     except FileNotFoundError:
                         pass
-                job = {**job, "video_exists": dest.exists()}
-            else:
-                _save_config(project, cfg)
+                job = {**job, "video_exists": published,
+                       "status": "done" if published or job.get("stale") else "processing",
+                       "publication_pending": not published and not job.get("stale")}
     return {"success": True, "job": job}
 
 
@@ -828,8 +854,10 @@ def compose_dh_slide(
     if not digi.exists():
         raise HTTPException(status_code=400, detail="数字人视频未就绪：请先上传已生成的讲解视频")
     if not use_upload:
-        stored_hash = str((cfg.get("slides", {}).get(slide_id) or {}).get("audio_sha256") or "")
-        if stored_hash and stored_hash != _digi_audio_hash(project, slide_id):
+        if presenter_source_stale(project.run_dir, cfg, cfg.get("slides", {}).get(slide_id) or {}):
+            raise HTTPException(status_code=409, detail="讲师照片或动作视频已变化，请重新生成讲师视频")
+        entry = cfg.get("slides", {}).get(slide_id) or {}
+        if presenter_audio_stale(project.run_dir, entry, slide_id):
             raise HTTPException(
                 status_code=409,
                 detail="该页旁白音频已更新，旧数字人视频与口型不再匹配；请重新生成该页数字人视频后再合成。",
@@ -874,6 +902,8 @@ def compose_dh_slide(
             position=position,
             border=border,
             shape=shape,
+            start_sec=cfg.get("upload_start_sec", 0) if use_upload else 0,
+            short_video_policy=cfg.get("upload_short_video_policy", "reject") if use_upload else "hold",
         )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))

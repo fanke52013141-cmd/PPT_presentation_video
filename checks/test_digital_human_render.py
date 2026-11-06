@@ -42,7 +42,14 @@ def _write(path: Path, value: str | bytes) -> None:
         path.write_text(value, encoding="utf-8")
 
 
-def test_uploaded_presenter_does_not_extend_lesson_duration(tmp_path: Path) -> None:
+@pytest.mark.parametrize(("presenter_duration", "policy", "rejected"), [
+    (2.0, "reject", False),
+    (0.6, "reject", False),  # Standard 0.4s Remotion tail.
+    (0.3, "reject", True),
+    (0.3, "loop", False),
+    (0.3, "hold", False),  # Generated presenter during trailing silence.
+])
+def test_presenter_duration_policy(tmp_path: Path, presenter_duration: float, policy: str, rejected: bool) -> None:
     _ensure_ffmpeg_in_path()
     if not shutil.which("ffmpeg") or not shutil.which("ffprobe"):
         pytest.skip("ffmpeg is unavailable")
@@ -51,7 +58,7 @@ def test_uploaded_presenter_does_not_extend_lesson_duration(tmp_path: Path) -> N
     output = tmp_path / "combined.mp4"
     for target, color, duration in (
         (base, "white", 1.0),
-        (presenter, "blue", 2.0),
+        (presenter, "blue", presenter_duration),
     ):
         subprocess.run(
             ["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i",
@@ -60,12 +67,14 @@ def test_uploaded_presenter_does_not_extend_lesson_duration(tmp_path: Path) -> N
             check=True,
             capture_output=True,
         )
-    composite_circle(
-        digi_video=presenter,
-        base_video=base,
-        output=output,
-        circle={"cx": 0.5, "cy": 0.5, "r": 0.2},
-    )
+    settings = dict(digi_video=presenter, base_video=base, output=output,
+                    circle={"cx": 0.5, "cy": 0.5, "r": 0.2}, short_video_policy=policy)
+    if rejected:
+        with pytest.raises(RuntimeError, match="短于课程"):
+            composite_circle(**settings)
+        assert not output.exists()
+        return
+    composite_circle(**settings)
     assert 0.9 <= _probe_duration_sec(output) <= 1.2
 
 

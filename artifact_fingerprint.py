@@ -131,10 +131,8 @@ def render_input_fingerprint(
         except (OSError, json.JSONDecodeError):
             digital_config = None
         if isinstance(digital_config, dict) and digital_config.get("enabled"):
-            render_keys = ("enabled", "mode", "shape", "circle", "video", "position", "border")
-            components[digital_config_key] = sha256_json({
-                key: digital_config.get(key) for key in render_keys
-            })
+            from digital_human_contracts import digital_human_render_config
+            components[digital_config_key] = sha256_json(digital_human_render_config(digital_config))
 
     payload: dict[str, Any] = {
         "schema_version": FINGERPRINT_SCHEMA_VERSION,

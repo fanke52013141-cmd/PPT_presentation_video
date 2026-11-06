@@ -19,6 +19,20 @@ RUNS_DIR = os.path.abspath(
 DATA_DIR = os.path.abspath(
     os.environ.get("PPT_STUDIO_DATA_DIR") or os.path.join(REPO_ROOT, "data")
 )
+PORTRAIT_ASSETS_DIR = os.path.abspath(
+    os.environ.get("PPT_PORTRAIT_ASSETS_DIR") or "D:/PPT_Studio_Assets"
+)
+LIVEPORTRAIT_REPO = os.path.join(PORTRAIT_ASSETS_DIR, "LivePortrait")
+MUSETALK_REPO = os.path.join(PORTRAIT_ASSETS_DIR, "MuseTalk")
+DEFAULT_PORTRAIT_MOTION_VIDEO = os.path.join(
+    REPO_ROOT, "presenter_templates", "lecturer_default.mp4"
+)
+_EXTERNAL_PORTRAIT_MOTION_VIDEO = os.path.join(
+    PORTRAIT_ASSETS_DIR, "presenter_templates", "lecturer_default.mp4"
+)
+if os.environ.get("PPT_PORTRAIT_ASSETS_DIR") and os.path.isfile(_EXTERNAL_PORTRAIT_MOTION_VIDEO):
+    DEFAULT_PORTRAIT_MOTION_VIDEO = _EXTERNAL_PORTRAIT_MOTION_VIDEO
+PORTRAIT_CACHE_DIR = os.path.join(DATA_DIR, "digital_human", "portrait_cache")
 AGENT_RATE_LIMIT_DB_PATH = os.path.abspath(
     os.environ.get("PPT_STUDIO_AGENT_RATE_LIMIT_DB_PATH") or os.path.join(DATA_DIR, "agent_rate_limit.db")
 )

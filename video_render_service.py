@@ -27,6 +27,7 @@ from sqlalchemy.orm import Session
 from artifact_fingerprint import sha256_json
 from database import LocalJob, Project, utc_now_naive
 import invalidation_service
+from pipeline_lifecycle import read_json_file
 from remotion_runner import RemotionRunner
 from scripts.media_tools import resolve_media_tool
 from tts_artifacts import confirmation_status as tts_confirmation_status
@@ -398,6 +399,14 @@ class VideoRenderService:
                 and not str(path).endswith("/scene.json")
                 and not str(path).endswith("/animation_timeline.json")
             }
+            # The reveal builder rewrites this derived background metadata on
+            # first render. The effective color remains in visual_settings.
+            manifest_path = Path(project.run_dir) / "reveal_manifest.json"
+            manifest = read_json_file(manifest_path)
+            if isinstance(manifest, dict):
+                manifest.pop("background_settings", None)
+                manifest.pop("background_detection", None)
+                stable_components["reveal_manifest.json"] = sha256_json(manifest)
             fingerprint_digest = sha256_json(
                 {
                     "schema_version": fingerprint.get("schema_version"),
@@ -856,6 +865,13 @@ class VideoRenderService:
         upload_video = digi_dir / "digi_upload.mp4"
         full_video = digi_dir / "digi_full.mp4"
         digi = upload_video if mode == "upload" else full_video
+        if mode == "portrait":
+            from digital_human_source_service import presenter_source_stale, presenter_audio_stale
+            entry = (cfg.get("slides") or {}).get("full") or {}
+            if (presenter_source_stale(project.run_dir, cfg, entry)
+                    or presenter_audio_stale(project.run_dir, entry, "full")):
+                self._discard_unpublished_digital_human_outputs(result.output_path, composite_out)
+                raise DigitalHumanCompositeError("讲师照片、动作视频或旁白已变化，请返回第 7 步重新生成讲师视频")
         if not digi.is_file() or digi.stat().st_size <= 0:
             if mode == "upload":
                 message = (
@@ -922,6 +938,8 @@ class VideoRenderService:
                 shape=shape,
                 border=border,
                 position=position,
+                start_sec=cfg.get("upload_start_sec", 0) if mode == "upload" else 0,
+                short_video_policy=cfg.get("upload_short_video_policy", "reject") if mode == "upload" else "hold",
             )
         except Exception as exc:
             logger.exception(

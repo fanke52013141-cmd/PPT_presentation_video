@@ -13,7 +13,8 @@
   var dhState = {
     config: {
       enabled: false,
-      mode: "comfyui",          // 'comfyui' | 'upload'
+      mode: "portrait",          // 'portrait' | 'upload'
+      motion_source: "default",
       shape: "circle",
       avatar_id: "",
       circle: { cx: 0.85, cy: 0.76, r: 0.12 },
@@ -26,6 +27,7 @@
     videoSize: null, // {w,h} 预览视频原始尺寸
     comfyuiWorkflowExists: false,
     avatarUploaded: false,
+    motion: { exists: false },
   };
   // 所有配置写入串行执行。切换到作品输出或提交渲染前可等待这条队列，
   // 防止刚上传的视频还未把 enabled/mode 持久化就开始渲染。
@@ -47,6 +49,7 @@
     if (!pid) return;
     try {
       var res = await API.get(base() + "/config", { silent: true });
+      if (projectId() !== pid) return;
       if (res && res.config) {
         dhState.config = res.config;
         if (!dhState.config.circle) dhState.config.circle = { cx: 0.85, cy: 0.76, r: 0.12 };
@@ -62,6 +65,7 @@
         dhState.config.slides = res.slides;
       }
       dhState.uploadVideoExists = !!(res && res.upload_video_exists);
+      dhState.motion = (res && res.motion) || { exists: false };
       dhState.avatarUploaded = !!dhState.config.avatar_id;
       updateAudioStatus();
       applyConfigToUI();
@@ -73,7 +77,7 @@
         Object.keys(dhState.config.slides).forEach(function (slideId) {
           var slide = dhState.config.slides[slideId];
           if (slide && slide.job_id &&
-              (slide.status === "queued" || slide.status === "processing")) {
+              (["queued", "processing", "waiting_external", "publishing", "submission_unknown"].indexOf(slide.status) !== -1)) {
             pollJob(slideId, slide.job_id, true);
           }
         });
@@ -98,6 +102,16 @@
     });
     // 模式选项卡
     updateModeTabs();
+    var motionSource = document.getElementById("dh-motion-source");
+    if (motionSource) motionSource.value = dhState.config.motion_source || "default";
+    var uploadStart = document.getElementById("dh-upload-start");
+    if (uploadStart) uploadStart.value = dhState.config.upload_start_sec || 0;
+    var uploadPolicy = document.getElementById("dh-upload-short-policy");
+    if (uploadPolicy) uploadPolicy.value = dhState.config.upload_short_video_policy || "reject";
+    var motionStatus = document.getElementById("dh-motion-status");
+    if (motionStatus) motionStatus.textContent = dhState.motion.exists
+      ? "动作视频就绪" + (dhState.motion.metadata ? "（" + Number(dhState.motion.metadata.duration_sec).toFixed(1) + " 秒）" : "")
+      : "动作视频未就绪，请上传视频或安装平台默认模板";
     // 上传视频状态
     var uploadStatus = document.getElementById("dh-upload-video-status");
     if (uploadStatus) {
@@ -133,14 +147,14 @@
   }
 
   function updateModeTabs() {
-    var mode = dhState.config.mode || "comfyui";
+    var mode = dhState.config.mode || "portrait";
     var tabComfyui = document.getElementById("dh-tab-comfyui");
     var tabUpload = document.getElementById("dh-tab-upload");
     var panelComfyui = document.getElementById("dh-mode-panel-comfyui");
     var panelUpload = document.getElementById("dh-mode-panel-upload");
-    if (tabComfyui) tabComfyui.classList.toggle("dh-tab-active", mode === "comfyui");
+    if (tabComfyui) tabComfyui.classList.toggle("dh-tab-active", mode !== "upload");
     if (tabUpload) tabUpload.classList.toggle("dh-tab-active", mode === "upload");
-    if (panelComfyui) panelComfyui.style.display = mode === "comfyui" ? "" : "none";
+    if (panelComfyui) panelComfyui.style.display = mode !== "upload" ? "" : "none";
     if (panelUpload) panelUpload.style.display = mode === "upload" ? "" : "none";
   }
 
@@ -148,7 +162,7 @@
     dhState.config.mode = mode;
     updateModeTabs();
     loadHealth();
-    return saveConfig();
+    return saveConfig().then(loadConfig);
   }
 
   function saveConfig() {
@@ -156,7 +170,7 @@
     if (!pid) return Promise.resolve();
     var enabledEl = document.getElementById("dh-enabled");
     dhState.config.enabled = enabledEl ? enabledEl.checked : false;
-    dhState.config.mode = dhState.config.mode || "comfyui";
+    dhState.config.mode = dhState.config.mode || "portrait";
     // 保存调用可能来自滑块、开关和上传完成回调。复制当前值后再排队，
     // 避免较早的请求在网络较慢时覆盖后一次用户修改。
     var payload = {
@@ -164,6 +178,9 @@
         mode: dhState.config.mode,
         shape: dhState.config.shape || "circle",
         avatar_id: dhState.config.avatar_id,
+        motion_source: dhState.config.motion_source || "default",
+        upload_start_sec: dhState.config.upload_start_sec || 0,
+        upload_short_video_policy: dhState.config.upload_short_video_policy || "reject",
         circle: Object.assign({}, dhState.config.circle),
         video: Object.assign({}, dhState.config.video),
       };
@@ -205,7 +222,10 @@
       // blocking error toast every time the optional step is opened/refreshed.
       var res = await API.get(base() + "/health", { silent: true });
       if (res) {
-        if (res.model_ready) {
+        if (dhState.config.mode === "portrait") {
+          el.textContent = res.portrait_model_ready ? "照片动作迁移模型就绪" : "照片动作迁移模型未就绪";
+          el.className = "dh-service-status " + (res.portrait_model_ready ? "dh-ok" : "dh-warn");
+        } else if (res.model_ready) {
           el.textContent = res.comfyui_online ? "模型就绪（ComfyUI）" : "模型就绪";
           el.className = "dh-service-status dh-ok";
         } else {
@@ -683,14 +703,24 @@
   }
 
   async function pollJob(slideId, jobId, silent = false) {
+    var pid = projectId();
+    if (!pid) return;
     if (dhState.polling[jobId]) return;
     dhState.polling[jobId] = true;
     var label = slideId === "full" ? "整段" : "页面 " + slideId;
     try {
       for (var i = 0; i < 3600; i++) {
         await sleep(2000);
-        var res = await API.get(base() + "/jobs/" + encodeURIComponent(jobId), { silent: true });
+        if (projectId() !== pid) return;
+        var res = await API.get(PROJECT_PREFIX + "/" + encodeURIComponent(pid) + "/digital-human/jobs/" + encodeURIComponent(jobId), { silent: true });
+        if (projectId() !== pid) return;
         var job = res && res.job ? res.job : res;
+        if (job && job.stale) {
+          markSlideStatus(slideId, "stale_source");
+          if (!silent) showToast("讲师素材或旁白已变化，请重新生成讲师视频");
+          await loadConfig();
+          break;
+        }
         var status = job && job.status;
         if (status === "done") {
           markSlideStatus(slideId, "done");
@@ -729,7 +759,11 @@
       showToast("请先上传数字人形象图片");
       return;
     }
-    if (!dhState.comfyuiWorkflowExists) {
+    if (dhState.config.mode === "portrait" && !dhState.motion.exists) {
+      showToast("请先准备动作视频");
+      return;
+    }
+    if (dhState.config.mode === "comfyui" && !dhState.comfyuiWorkflowExists) {
       showToast("请先上传 ComfyUI 工作流 JSON");
       return;
     }
@@ -744,13 +778,18 @@
     if (btn) btn.disabled = true;
 
     try {
+      await waitForPendingPersistence();
+      if (projectId() !== pid) return;
+      await saveConfig();
       // 第一步：确保整段音频已导出（合并 5 页音频 + 页间静音）
       // 进度写在生成按钮旁的专用状态行（页签状态行 id 仍是 dh-slide-status）
       var statusEl = document.getElementById("dh-generate-status");
       if (statusEl) statusEl.hidden = false;
       setUiTaskState(statusEl, 'running', '正在合并 ' + ready + ' 页音频');
       renderPageTaskState(statusEl.parentElement, 'digital-human-submit', 'running', '正在准备数字人视频与旁白音频', 'video');
-      var exportRes = await API.post(base() + "/export-audio", { gap_sec: 0.6 }, { timeoutMs: 900000 });
+      var gapSec = dhState.config.mode === "portrait" ? 0.4 : 0.6;
+      var exportRes = await API.post(base() + "/export-audio", { gap_sec: gapSec }, { timeoutMs: 900000 });
+      if (projectId() !== pid) return;
       if (!exportRes || !exportRes.success) {
         setUiTaskState(statusEl, 'error', "音频合并失败");
         showToast((exportRes && exportRes.detail) || "导出整段语音失败");
@@ -767,7 +806,7 @@
         if (statusEl) statusEl.hidden = true;
         markSlideStatus("full", "queued");
         pollJob("full", res.job_id);
-        showToast("已提交整段数字人生成任务（" + exportRes.slides + " 页音频已合并）。Wan2.2 S2V 生成耗时较长，请耐心等待。");
+        showToast("已提交整段讲师视频任务（" + exportRes.slides + " 页音频已合并），可在此查看生成进度。");
       } else if (res && res.detail) {
         setUiTaskState(statusEl, 'error', res.detail);
         showToast(res.detail);
@@ -880,8 +919,29 @@
     // 模式选项卡切换
     var tabComfyui = document.getElementById("dh-tab-comfyui");
     var tabUpload = document.getElementById("dh-tab-upload");
-    if (tabComfyui) tabComfyui.addEventListener("click", function () { switchMode("comfyui"); });
+    if (tabComfyui) tabComfyui.addEventListener("click", function () { switchMode("portrait"); });
     if (tabUpload) tabUpload.addEventListener("click", function () { switchMode("upload"); });
+    var motionSource = document.getElementById("dh-motion-source");
+    if (motionSource) motionSource.addEventListener("change", function () {
+      dhState.config.motion_source = motionSource.value;
+      saveConfig().then(loadConfig).catch(function () {});
+    });
+    var motionFile = document.getElementById("dh-motion-file");
+    if (motionFile) motionFile.addEventListener("change", function () {
+      dhUploadInFlight = uploadMotion(motionFile.files && motionFile.files[0]);
+      dhUploadInFlight.catch(function () {});
+      motionFile.value = "";
+    });
+    var uploadStart = document.getElementById("dh-upload-start");
+    if (uploadStart) uploadStart.addEventListener("change", function () {
+      dhState.config.upload_start_sec = Number(uploadStart.value);
+      saveConfig();
+    });
+    var uploadPolicy = document.getElementById("dh-upload-short-policy");
+    if (uploadPolicy) uploadPolicy.addEventListener("change", function () {
+      dhState.config.upload_short_video_policy = uploadPolicy.value;
+      saveConfig();
+    });
 
     // 导入视频上传
     var uploadVideoFile = document.getElementById("dh-upload-video-file");
@@ -925,7 +985,8 @@
     var cfAvatarFile = document.getElementById("dh-comfyui-avatar-file");
     if (cfAvatarFile) {
       cfAvatarFile.addEventListener("change", function () {
-        uploadAvatar(cfAvatarFile.files && cfAvatarFile.files[0]);
+        dhUploadInFlight = uploadAvatar(cfAvatarFile.files && cfAvatarFile.files[0]);
+        dhUploadInFlight.catch(function () {});
         cfAvatarFile.value = "";
       });
     }
@@ -960,13 +1021,35 @@
     loadConfig();
   }
 
+  async function uploadMotion(file) {
+    var pid = projectId();
+    if (!file || !pid) return;
+    var fd = new FormData();
+    fd.append("file", file);
+    var status = document.getElementById("dh-motion-status");
+    if (status) status.textContent = "正在上传并检查动作视频…";
+    try {
+      var result = await API.post(PROJECT_PREFIX + "/" + encodeURIComponent(pid) + "/digital-human/motion", fd);
+      if (!result || !result.success) throw new Error("动作视频未保存");
+      if (projectId() !== pid) return;
+      await loadConfig();
+      showToast("动作视频已保存，可与讲师照片一起生成");
+    } catch (error) {
+      if (projectId() === pid && status) status.textContent = "动作视频上传失败：" + error.message;
+      throw error;
+    }
+  }
+
   async function uploadAvatar(file) {
     if (!file) return;
+    var pid = projectId();
+    if (!pid) return;
     var fd = new FormData();
     fd.append("file", file);
     fd.append("name", file.name);
     try {
-      var res = await API.post(base() + "/avatars", fd);
+      var res = await API.post(PROJECT_PREFIX + "/" + encodeURIComponent(pid) + "/digital-human/avatars", fd);
+      if (projectId() !== pid) return;
       if (res && res.avatar_id) {
         dhState.config.avatar_id = res.avatar_id;
         dhState.avatarUploaded = true;
@@ -977,6 +1060,7 @@
     } catch (e) {
       console.error("[DH] uploadAvatar failed:", e);
       showToast("形象图片上传失败：" + ((e && (e.detail || e.message)) || "未知错误"));
+      throw e;
     }
   }
 

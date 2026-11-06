@@ -1,5 +1,5 @@
 {
-  "agent_api_version": "3.0.0",
+  "agent_api_version": "3.1.0",
   "capabilities": [
     {
       "behavior_version": "2",
@@ -3151,7 +3151,7 @@
       "version": "2.0"
     },
     {
-      "behavior_version": "3",
+      "behavior_version": "4",
       "bindings": {
         "idempotency_key": "body",
         "project_id": "path"
@@ -3161,7 +3161,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "70185d7fd50bff09073e831c",
+      "contract_revision": "67b4fd151b7a8f40fe5a943a",
       "description": "Start video rendering for the project.",
       "destructive": false,
       "domain": "video",
@@ -3640,7 +3640,7 @@
       "version": "1.0"
     },
     {
-      "behavior_version": "3",
+      "behavior_version": "4",
       "bindings": {
         "project_id": "path"
       },
@@ -3649,7 +3649,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "88cf9f79e307a46822e65ab1",
+      "contract_revision": "2fd4a10428c79340d81c78c4",
       "description": "Get digital-human configuration for a project.",
       "destructive": false,
       "domain": "digital_human",
@@ -3678,7 +3678,48 @@
       "mcp_tool": "ppt_digital_human_config_get",
       "method": "GET",
       "output_schema": {
-        "additionalProperties": true,
+        "properties": {
+          "audio_ready": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "title": "Audio Ready",
+            "type": "object"
+          },
+          "audio_ready_count": {
+            "default": 0,
+            "title": "Audio Ready Count",
+            "type": "integer"
+          },
+          "config": {
+            "additionalProperties": true,
+            "title": "Config",
+            "type": "object"
+          },
+          "motion": {
+            "additionalProperties": true,
+            "title": "Motion",
+            "type": "object"
+          },
+          "slides": {
+            "additionalProperties": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Slides",
+            "type": "object"
+          },
+          "total_slides": {
+            "default": 0,
+            "title": "Total Slides",
+            "type": "integer"
+          },
+          "upload_video_exists": {
+            "default": false,
+            "title": "Upload Video Exists",
+            "type": "boolean"
+          }
+        },
         "type": "object"
       },
       "path": "/api/agent/v1/projects/{project_id}/digital-human/config",
@@ -3687,10 +3728,10 @@
       ],
       "response_kind": "json",
       "status": "stable",
-      "version": "1.1"
+      "version": "1.2"
     },
     {
-      "behavior_version": "3",
+      "behavior_version": "4",
       "bindings": {
         "config": "body",
         "project_id": "path"
@@ -3700,7 +3741,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "087d856243dc1fb78fc5e0d4",
+      "contract_revision": "944e03e96ee1cbfd7c886552",
       "description": "Update digital-human configuration for a project.",
       "destructive": false,
       "domain": "digital_human",
@@ -3754,6 +3795,11 @@
             "title": "Config",
             "type": "object"
           },
+          "motion": {
+            "additionalProperties": true,
+            "title": "Motion",
+            "type": "object"
+          },
           "slides": {
             "additionalProperties": {
               "additionalProperties": true,
@@ -3781,10 +3827,10 @@
       ],
       "response_kind": "json",
       "status": "stable",
-      "version": "1.1"
+      "version": "1.2"
     },
     {
-      "behavior_version": "3",
+      "behavior_version": "4",
       "bindings": {
         "project_id": "path"
       },
@@ -3793,7 +3839,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "4be66b15662e7c7186b175e7",
+      "contract_revision": "ee8da63ab67e8f6c009c34a8",
       "description": "Check digital-human service availability and model readiness.",
       "destructive": false,
       "domain": "digital_human",
@@ -3834,7 +3880,7 @@
       "version": "1.1"
     },
     {
-      "behavior_version": "4",
+      "behavior_version": "5",
       "bindings": {
         "project_id": "path"
       },
@@ -3843,7 +3889,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "8181d280d44c77d89febc7f5",
+      "contract_revision": "4e2e7e176ee81826c49a6442",
       "description": "Submit one full-course presenter job using the selected avatar and current exported audio; returns job_id/status and propagates actual failures.",
       "destructive": false,
       "domain": "digital_human",
@@ -13552,6 +13598,56 @@
     {
       "behavior_version": "1",
       "bindings": {
+        "project_id": "path"
+      },
+      "cli_command": "digital-human upload-motion",
+      "concurrency": {
+        "expected_revision_supported": false,
+        "resource_scope": null
+      },
+      "contract_revision": "358acb2494f99e1e7038d1e5",
+      "description": "Upload the project's custom driving video for photo motion transfer; identical bytes are a no-op.",
+      "destructive": false,
+      "domain": "digital_human",
+      "id": "digital_human.motion.upload",
+      "idempotency": {
+        "key_required": false,
+        "supported": false
+      },
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "project_id": {
+            "description": "The project ID.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id"
+        ],
+        "type": "object"
+      },
+      "invocable": false,
+      "long_running": false,
+      "mcp_enabled": false,
+      "mcp_tool": "ppt_digital_human_motion_upload",
+      "method": "POST",
+      "output_schema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "path": "/api/agent/v1/projects/{project_id}/digital-human/motion",
+      "required_scopes": [
+        "project:write"
+      ],
+      "response_kind": "file_upload",
+      "status": "stable",
+      "version": "1.0"
+    },
+    {
+      "behavior_version": "2",
+      "bindings": {
         "payload": "body",
         "project_id": "path",
         "slide_id": "path"
@@ -13561,7 +13657,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "df388971b9aae94527d0f1ad",
+      "contract_revision": "67ba85ce4a2bd7658a78782d",
       "description": "Generate the digital-human presenter video for one slide (ComfyUI/Minimax backend per configuration).",
       "destructive": false,
       "domain": "digital_human",
@@ -13622,7 +13718,7 @@
       "version": "1.0"
     },
     {
-      "behavior_version": "3",
+      "behavior_version": "4",
       "bindings": {
         "job_id": "path",
         "project_id": "path"
@@ -13632,7 +13728,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "e2fd6744c81977463a217670",
+      "contract_revision": "05d31d63f52713775813c983",
       "description": "Read one digital-human generation job by id.",
       "destructive": false,
       "domain": "digital_human",
@@ -13736,7 +13832,7 @@
       "version": "1.0"
     },
     {
-      "behavior_version": "1",
+      "behavior_version": "2",
       "bindings": {
         "payload": "body",
         "project_id": "path",
@@ -13747,7 +13843,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "e7056135fa98945f9680704a",
+      "contract_revision": "2e8bb78a054207db5b547ed6",
       "description": "Compose the slide video with the digital-human presenter overlay.",
       "destructive": false,
       "domain": "digital_human",
@@ -14072,7 +14168,7 @@
       "version": "1.0"
     },
     {
-      "behavior_version": "1",
+      "behavior_version": "2",
       "bindings": {
         "project_id": "path"
       },
@@ -14081,7 +14177,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "881826e032abdbce6fecc4a4",
+      "contract_revision": "2eb65331b85b4159f4d55698",
       "description": "Upload one digital-human avatar image (multipart/form-data).",
       "destructive": false,
       "domain": "digital_human",
@@ -14122,7 +14218,7 @@
       "version": "1.0"
     },
     {
-      "behavior_version": "1",
+      "behavior_version": "2",
       "bindings": {
         "project_id": "path"
       },
@@ -14131,7 +14227,7 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "03e4acec707f31682940b03c",
+      "contract_revision": "e840ff45efcd8e3619a35f51",
       "description": "List uploaded digital-human avatars.",
       "destructive": false,
       "domain": "digital_human",
@@ -18217,5 +18313,5 @@
       "version": "1.0"
     }
   ],
-  "contract_hash": "7303b615b1219d43"
+  "contract_hash": "3931edce64cdd9df"
 }

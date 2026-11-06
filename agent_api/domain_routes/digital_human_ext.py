@@ -20,6 +20,13 @@ import digital_human_routes as dh
 router = APIRouter()
 
 
+@router.post("/projects/{project_id}/digital-human/motion")
+async def agent_dh_upload_motion(
+    project_id: str, file: UploadFile = File(...), db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    return await dh.upload_dh_motion(project_id, file=file, db=db)
+
+
 @router.post("/projects/{project_id}/digital-human/slides/{slide_id}/generate")
 def agent_dh_generate_slide(
     project_id: str,

@@ -1,8 +1,8 @@
 # Agent Capability Matrix
 
-- **Agent API Version**: 3.0.0
-- **Contract Hash**: `7303b615b1219d43`
-- **Total Capabilities**: 274
+- **Agent API Version**: 3.1.0
+- **Contract Hash**: `3931edce64cdd9df`
+- **Total Capabilities**: 275
 
 This document is auto-generated from `agent_contract/capabilities.py`.
 Do not edit manually — run `python scripts/generate_agent_contracts.py`.
@@ -36,8 +36,8 @@ Do not edit manually — run `python scripts/generate_agent_contracts.py`.
 | `artifacts.list` | 1.1 | stable | GET | `/api/agent/v1/projects/{project_id}/artifacts` | `ppt_artifacts_list` | Yes | `artifacts list` | `database.ArtifactRecord` | No | No |
 | `artifact.get` | 1.1 | stable | GET | `/api/agent/v1/projects/{project_id}/artifacts/{artifact_id}` | `ppt_artifact_get` | Yes | `artifact get` | `database.ArtifactRecord` | No | No |
 | `diagnostics` | 1.0 | stable | GET | `/api/agent/v1/diagnostics` | `ppt_diagnostics` | Yes | `diagnostics` | `agent_api.routes.get_diagnostics` | No | No |
-| `digital_human.config.get` | 1.1 | stable | GET | `/api/agent/v1/projects/{project_id}/digital-human/config` | `ppt_digital_human_config_get` | Yes | `digital-human config` | `digital_human_routes.router` | No | No |
-| `digital_human.config.update` | 1.1 | stable | PATCH | `/api/agent/v1/projects/{project_id}/digital-human/config` | `ppt_digital_human_config_update` | Yes | `digital-human config --set` | `digital_human_routes.router` | No | No |
+| `digital_human.config.get` | 1.2 | stable | GET | `/api/agent/v1/projects/{project_id}/digital-human/config` | `ppt_digital_human_config_get` | Yes | `digital-human config` | `digital_human_routes.router` | No | No |
+| `digital_human.config.update` | 1.2 | stable | PATCH | `/api/agent/v1/projects/{project_id}/digital-human/config` | `ppt_digital_human_config_update` | Yes | `digital-human config --set` | `digital_human_routes.router` | No | No |
 | `digital_human.health` | 1.1 | stable | GET | `/api/agent/v1/projects/{project_id}/digital-human/health` | `ppt_digital_human_health` | Yes | `digital-human health` | `digital_human_client.get_digital_human_client` | No | No |
 | `digital_human.generate` | 2.0 | stable | POST | `/api/agent/v1/projects/{project_id}/digital-human/generate-full` | `ppt_digital_human_generate` | Yes | `digital-human generate` | `digital_human_routes.generate_dh_full` | Yes | No |
 | `project.delete` | 1.1 | stable | DELETE | `/api/agent/v1/projects/{project_id}` | `ppt_project_delete` | Yes | `project delete` | `project_service.ProjectService.delete` | No | Yes |
@@ -195,6 +195,7 @@ Do not edit manually — run `python scripts/generate_agent_contracts.py`.
 | `annotation.editor_ink.get` | 1.2 | stable | GET | `/api/agent/v1/projects/{project_id}/annotations/slides/{slide_id}/editor-inks/{annotation_id}/{stroke_index}` | `ppt_annotation_editor_ink_get` | No | `annotation editor-ink` | `annotation_service.AnnotationService.annotation_editor_ink` | No | No |
 | `annotation.ink.get` | 1.1 | stable | GET | `/api/agent/v1/projects/{project_id}/annotations/slides/{slide_id}/inks/{build_id}/{annotation_id}/{stroke_index}/{frame_index}` | `ppt_annotation_ink_get` | No | `annotation ink` | `annotation_service.AnnotationService.annotation_asset` | No | No |
 | `annotation.preview.download` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/annotations/slides/{slide_id}/export-previews/{token}` | `ppt_annotation_preview_download` | No | `annotation preview` | `annotation_service preview_exports` | No | No |
+| `digital_human.motion.upload` | 1.0 | stable | POST | `/api/agent/v1/projects/{project_id}/digital-human/motion` | `ppt_digital_human_motion_upload` | No | `digital-human upload-motion` | `digital_human_routes.upload_dh_motion` | No | No |
 | `digital_human.slide.generate` | 1.0 | stable | POST | `/api/agent/v1/projects/{project_id}/digital-human/slides/{slide_id}/generate` | `ppt_digital_human_slide_generate` | Yes | `digital-human generate-slide` | `digital_human_routes.generate_dh` | Yes | No |
 | `digital_human.jobs.get` | 1.2 | stable | GET | `/api/agent/v1/projects/{project_id}/digital-human/jobs/{job_id}` | `ppt_digital_human_jobs_get` | Yes | `digital-human job` | `digital_human_routes.get_dh_job` | No | No |
 | `digital_human.slide_video.get` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/digital-human/slides/{slide_id}/video` | `ppt_digital_human_slide_video_get` | No | `digital-human slide-video` | `digital_human_routes.get_dh_slide_video` | No | No |

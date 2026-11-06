@@ -272,6 +272,26 @@ def test_submission_key_ignores_artifacts_created_during_render(
     assert service._submission_key(project) == first
 
 
+def test_submission_key_ignores_derived_manifest_background_metadata(tmp_path: Path) -> None:
+    from artifact_fingerprint import render_input_fingerprint
+
+    service, project = _service(tmp_path, _SubmissionStore())
+    service.artifacts.current_render_input_fingerprint = lambda project: render_input_fingerprint(
+        project.run_dir, visual_settings={"video_background": "#FEFDF9"}, pipeline_version="test-pipeline",
+    )
+    path = Path(project.run_dir) / "reveal_manifest.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    manifest = {"canvas": {"background": "#FEFDF9"}, "slides": []}
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+    first = service._submission_key(project)
+    manifest["background_settings"] = {"video_background": "#FEFDF9"}
+    path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    assert service._submission_key(project) == first
+    manifest["slides"].append({"slide_id": "slide_001", "groups": []})
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+    assert service._submission_key(project) != first
+
+
 def test_store_reads_submission_key_and_preserves_retry_attempts(
     tmp_path: Path,
 ) -> None:

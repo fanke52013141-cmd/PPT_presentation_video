@@ -20,8 +20,10 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import logging
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -117,7 +119,8 @@ def _assert_path_safe(path_str: str, label: str = "file") -> Path:
     if not path_str:
         raise HTTPException(status_code=400, detail=f"{label} 路径为空")
     p = Path(path_str).resolve()
-    allowed_roots = [DATA_DIR, REPO_ROOT]
+    from repository_paths import RUNS_DIR
+    allowed_roots = [DATA_DIR, REPO_ROOT, Path(RUNS_DIR)]
     # 加入系统临时目录（mock 生成的临时视频可能在这里）
     import tempfile
     allowed_roots.append(Path(tempfile.gettempdir()))
@@ -431,10 +434,14 @@ def _execute_job(job_id: str) -> None:
         # 优先使用任务自带的 backend（允许前端逐任务指定），其次全局环境变量
         job_backend = (job.get("backend") or "").strip().lower()
         backend = job_backend or INFERENCE_BACKEND or ("mock" if MOCK_MODE else "latentsync")
-        if not latentsync_ready() and backend not in ("comfyui",):
+        if not latentsync_ready() and backend not in ("comfyui", "portrait"):
             raise RuntimeError("数字人模型未部署（LatentSync 未就绪，或未启用 MOCK）")
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        if backend == "comfyui":
+        if backend == "portrait":
+            from digital_human_portrait_service import configured_dependencies, run_portrait_pipeline
+            run_portrait_pipeline(avatar_path, Path(job["driving_path"]), audio_path,
+                                  output_path, configured_dependencies())
+        elif backend == "comfyui":
             _run_comfyui_inference(job, avatar_path, audio_path, output_path)
         elif MOCK_MODE or backend == "mock":
             _run_mock_inference(job, avatar_path, audio_path, output_path)
@@ -511,6 +518,8 @@ def composite_circle(
     border: Optional[Dict[str, Any]] = None,
     video: Optional[Dict[str, Any]] = None,
     shape: str = "circle",
+    start_sec: float = 0,
+    short_video_policy: str = "reject",
 ) -> Dict[str, Any]:
     """把 digi_video 裁剪成圆形/矩形窗口并叠加到 base_video 上。
 
@@ -523,6 +532,17 @@ def composite_circle(
     """
     shape = "rect" if str(shape).lower() in ("rect", "rectangle", "square") else "circle"
     digi_size = _probe_video_size(digi_video)
+    import math
+    start_sec = float(start_sec)
+    if not math.isfinite(start_sec) or start_sec < 0:
+        raise RuntimeError("视频起点必须为非负秒数")
+    if short_video_policy not in ("reject", "loop", "hold"):
+        raise RuntimeError("无效的短视频处理方式")
+    presenter_duration = _probe_duration_sec(digi_video)
+    if start_sec >= presenter_duration:
+        raise RuntimeError("视频起点必须早于视频结束时间")
+    presenter_input = (["-stream_loop", "-1"] if short_video_policy == "loop" else [])
+    presenter_input += ["-ss", str(start_sec), "-i", str(digi_video)]
     base_size = _probe_video_size(base_video) if base_video else None
     if base_size is None:
         base_size = digi_size
@@ -596,8 +616,11 @@ def composite_circle(
         base_duration = _probe_duration_sec(base_video)
         if base_duration <= 0:
             raise RuntimeError("无法读取课程视频时长，数字人合成已停止。")
+        # Allow the standard 0.4s presentation tail and frame rounding.
+        if short_video_policy == "reject" and presenter_duration - start_sec + 0.5 < base_duration:
+            raise RuntimeError("讲师视频短于课程，请更换视频或明确启用循环播放")
         fc = f"{digi_filter};[1:v][digi]overlay={x}:{y}[v]"
-        cmd = ["ffmpeg", "-y", "-i", str(digi_video), "-i", str(base_video),
+        cmd = ["ffmpeg", "-y", *presenter_input, "-i", str(base_video),
                "-filter_complex", fc, "-map", "[v]", "-map", "1:a?",
                "-t", f"{base_duration:.6f}",
                "-c:v", "libx264", "-preset", "medium", "-crf", "20",
@@ -605,7 +628,7 @@ def composite_circle(
     else:
         # 只输出圆形 digi 视频（透明背景会变黑，保持纯色底以便预览）
         fc = f"{digi_filter};[digi]format=yuv420p[v]"
-        cmd = ["ffmpeg", "-y", "-i", str(digi_video),
+        cmd = ["ffmpeg", "-y", "-ss", str(start_sec), "-i", str(digi_video),
                "-filter_complex", fc, "-map", "[v]", "-map", "0:a?",
                "-c:v", "libx264", "-preset", "medium", "-crf", "20",
                "-c:a", "aac", "-shortest", "-movflags", "+faststart", str(output)]
@@ -689,10 +712,20 @@ def health() -> Dict[str, Any]:
         backend_used = INFERENCE_BACKEND or ("mock" if MOCK_MODE else "latentsync")
     # model_ready：优先认 ComfyUI（用户当前主走 ComfyUI），其次 LatentSync
     model_ready = MOCK_MODE or comfyui_online or latentsync_ready()
+    from repository_paths import LIVEPORTRAIT_REPO, MUSETALK_REPO, DEFAULT_PORTRAIT_MOTION_VIDEO
+    portrait_model_ready = all(path.is_file() for path in (
+        Path(LIVEPORTRAIT_REPO) / ".venv/Scripts/python.exe",
+        Path(LIVEPORTRAIT_REPO) / "pretrained_weights/liveportrait/base_models/motion_extractor.pth",
+        Path(MUSETALK_REPO) / ".venv/Scripts/python.exe",
+        Path(MUSETALK_REPO) / "models/musetalkV15/unet.pth",
+        Path(MUSETALK_REPO) / "ppt_windows_configuration.json",
+    ))
     return {
         "success": True,
         "service": "digital_human",
         "model_ready": model_ready,
+        "portrait_model_ready": portrait_model_ready,
+        "default_motion_available": Path(DEFAULT_PORTRAIT_MOTION_VIDEO).is_file(),
         "mock_mode": MOCK_MODE,
         "comfyui_online": comfyui_online,
         "inference_backend": backend_used,
@@ -817,6 +850,22 @@ def avatar_image(avatar_id: str) -> FileResponse:
 
 @app.post("/api/digital-human/jobs", status_code=201)
 def create_job(payload: Dict[str, Any]) -> Dict[str, Any]:
+    request_id = str(payload.get("request_id") or "")
+    if request_id and not re.fullmatch(r"[0-9a-f]{32}", request_id):
+        raise HTTPException(status_code=400, detail="request_id 无效")
+    request_signature = hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    exact_job_id = "job_" + request_id if request_id else ""
+    def replay():
+        existing = _jobs.get(exact_job_id) if exact_job_id else None
+        if existing:
+            if existing.get("request_signature") != request_signature:
+                raise HTTPException(status_code=409, detail="同一请求标识不能用于不同生成输入")
+            return {"success": True, "job_id": exact_job_id, "status": existing["status"]}
+        return None
+    with _jobs_lock:
+        existing_result = replay()
+        if existing_result:
+            return existing_result
     avatar_id = str(payload.get("avatar_id") or "").strip()
     audio_path_raw = str(payload.get("audio_path") or "").strip()
     slide_id = str(payload.get("slide_id") or "slide_000").strip()
@@ -838,9 +887,28 @@ def create_job(payload: Dict[str, Any]) -> Dict[str, Any]:
     if not audio_path.exists():
         raise HTTPException(status_code=400, detail=f"音频不存在: {audio_path}")
 
-    # ComfyUI 后端不需要 LatentSync 就绪
-    is_comfyui = INFERENCE_BACKEND == "comfyui" or str(payload.get("backend") or "").lower() == "comfyui"
-    if not is_comfyui and not latentsync_ready():
+    requested_backend = str(payload.get("backend") or INFERENCE_BACKEND or "latentsync").lower()
+    is_comfyui = requested_backend == "comfyui"
+    is_portrait = requested_backend == "portrait"
+    driving_path = None
+    if is_portrait:
+        from digital_human_portrait_service import configured_dependencies
+        from repository_paths import DEFAULT_PORTRAIT_MOTION_VIDEO
+        raw_driving = str(payload.get("driving_path") or DEFAULT_PORTRAIT_MOTION_VIDEO)
+        driving_path = Path(raw_driving).resolve()
+        if driving_path != Path(DEFAULT_PORTRAIT_MOTION_VIDEO).resolve():
+            driving_path = _assert_path_safe(raw_driving, "动作视频")
+        if not driving_path.is_file():
+            raise HTTPException(status_code=400, detail="请上传动作视频或安装默认动作模板")
+        if avatar_path.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp"}:
+            raise HTTPException(status_code=400, detail="照片动作迁移模式需要讲师照片")
+        try:
+            dependencies = configured_dependencies()
+            dependencies.motion.validate()
+            dependencies.lipsync.validate()
+        except ValueError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+    if not is_comfyui and not is_portrait and not latentsync_ready():
         return JSONResponse(
             status_code=503,
             content={
@@ -851,6 +919,9 @@ def create_job(payload: Dict[str, Any]) -> Dict[str, Any]:
         )
 
     with _jobs_lock:
+        existing_result = replay()
+        if existing_result:
+            return existing_result
         # 计数、上限判断与任务注册必须在同一临界区内，避免无锁遍历 _jobs
         # 时被 _execute_job 线程修改字典（RuntimeError: dict changed size）
         # 以及并发 create_job 双双读到 < MAX_JOBS 的 TOCTOU 竞态。
@@ -862,11 +933,13 @@ def create_job(payload: Dict[str, Any]) -> Dict[str, Any]:
         if active_count >= MAX_JOBS:
             raise HTTPException(status_code=429, detail="任务队列已满，请稍后重试")
 
-        job_id = f"job_{uuid.uuid4().hex[:10]}"
+        job_id = exact_job_id or f"job_{uuid.uuid4().hex[:10]}"
         JOB_DIR.mkdir(parents=True, exist_ok=True)
         output_path = JOB_DIR / f"{job_id}.mp4"
         job: Dict[str, Any] = {
             "job_id": job_id,
+            "request_id": request_id,
+            "request_signature": request_signature,
             "avatar_id": avatar_id,
             "avatar_path": str(avatar_path),
             "audio_path": str(audio_path),
@@ -879,7 +952,10 @@ def create_job(payload: Dict[str, Any]) -> Dict[str, Any]:
             "created_at": _now(),
         }
         # ComfyUI 专用字段
-        if is_comfyui:
+        if is_portrait:
+            job["backend"] = "portrait"
+            job["driving_path"] = str(driving_path)
+        elif is_comfyui:
             job["backend"] = "comfyui"
             wf_template = payload.get("workflow_template")
             if isinstance(wf_template, dict):
@@ -998,6 +1074,8 @@ def composite(payload: Dict[str, Any]) -> Dict[str, Any]:
             border=border,
             video=video,
             shape=shape,
+            start_sec=payload.get("start_sec", 0),
+            short_video_policy=payload.get("short_video_policy", "reject"),
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc))

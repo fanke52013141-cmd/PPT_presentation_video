@@ -344,7 +344,7 @@ CAPABILITIES: list[AgentCapability] = [
     ),
     AgentCapability(
         id="video.render",
-        version="2.1", behavior_version="3",
+        version="2.1", behavior_version="4",
         status=CapabilityStatus.stable,
         description="Start video rendering for the project.",
         request_model=VideoRenderRequest,
@@ -399,12 +399,12 @@ CAPABILITIES: list[AgentCapability] = [
     ),
     AgentCapability(
         id="digital_human.config.get",
-        version="1.1",
-        behavior_version="3",
+        version="1.2",
+        behavior_version="4",
         status=CapabilityStatus.stable,
         description="Get digital-human configuration for a project.",
         request_model=BaseModel,
-        response_model=BaseModel,
+        response_model=DigitalHumanConfigResult,
         agent_api_method="GET",
         agent_api_path="/api/agent/v1/projects/{project_id}/digital-human/config",
         mcp_tool_name="ppt_digital_human_config_get",
@@ -413,8 +413,8 @@ CAPABILITIES: list[AgentCapability] = [
     ),
     AgentCapability(
         id="digital_human.config.update",
-        version="1.1",
-        behavior_version="3",
+        version="1.2",
+        behavior_version="4",
         status=CapabilityStatus.stable,
         description="Update digital-human configuration for a project.",
         request_model=DigitalHumanConfigUpdateRequest,
@@ -428,7 +428,7 @@ CAPABILITIES: list[AgentCapability] = [
     AgentCapability(
         id="digital_human.health",
         version="1.1",
-        behavior_version="3",
+        behavior_version="4",
         status=CapabilityStatus.stable,
         description="Check digital-human service availability and model readiness.",
         request_model=BaseModel,
@@ -442,7 +442,7 @@ CAPABILITIES: list[AgentCapability] = [
     AgentCapability(
         id="digital_human.generate",
         version="2.0",
-        behavior_version="4",
+        behavior_version="5",
         status=CapabilityStatus.stable,
         description="Submit one full-course presenter job using the selected avatar and current exported audio; returns job_id/status and propagates actual failures.",
         request_model=BaseModel,

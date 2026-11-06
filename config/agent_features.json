@@ -1,4 +1,18 @@
 {
+  "digital_human_routes.upload_dh_motion": {
+    "source": "digital_human_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/projects/{project_id}/digital-human/motion')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "digital_human_source_service.py",
+    "capabilities": ["digital_human.motion.upload"],
+    "coverage": "partial",
+    "reason": "Web and Agent share project-owned motion storage; real transfer and upload scenario acceptance is in progress."
+  },
   "account_routes.accounts": {
     "source": "account_routes.py",
     "routes": [

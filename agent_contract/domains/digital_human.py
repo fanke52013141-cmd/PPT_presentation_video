@@ -25,6 +25,7 @@ class DigitalHumanConfigResult(BaseModel):
     audio_ready_count: int = 0
     total_slides: int = 0
     upload_video_exists: bool = False
+    motion: dict[str, Any] = Field(default_factory=dict)
 
 
 def _cap(**kwargs) -> AgentCapability:
@@ -41,7 +42,15 @@ def _cap(**kwargs) -> AgentCapability:
 
 CAPABILITIES = [
     _cap(
-        id="digital_human.slide.generate",
+        id="digital_human.motion.upload",
+        description="Upload the project's custom driving video for photo motion transfer; identical bytes are a no-op.",
+        agent_api_method="POST", agent_api_path="/api/agent/v1/projects/{project_id}/digital-human/motion",
+        cli_command="digital-human upload-motion",
+        service_ref="digital_human_routes.upload_dh_motion",
+        transport="file_upload", mcp_enabled=False,
+    ),
+    _cap(
+        id="digital_human.slide.generate", behavior_version="2",
         description="Generate the digital-human presenter video for one slide (ComfyUI/Minimax backend per configuration).",
         request_model=OptionalFreeFormRequest,
         agent_api_method="POST", agent_api_path="/api/agent/v1/projects/{project_id}/digital-human/slides/{slide_id}/generate",
@@ -50,7 +59,7 @@ CAPABILITIES = [
         long_running=True,
     ),
     _cap(
-        id="digital_human.jobs.get", version="1.2", behavior_version="3",
+        id="digital_human.jobs.get", version="1.2", behavior_version="4",
         description="Read one digital-human generation job by id.",
         agent_api_method="GET", agent_api_path="/api/agent/v1/projects/{project_id}/digital-human/jobs/{job_id}",
         cli_command="digital-human job",
@@ -66,7 +75,7 @@ CAPABILITIES = [
         mcp_enabled=False,
     ),
     _cap(
-        id="digital_human.slide.compose",
+        id="digital_human.slide.compose", behavior_version="2",
         description="Compose the slide video with the digital-human presenter overlay.",
         request_model=FreeFormRequest,
         agent_api_method="POST", agent_api_path="/api/agent/v1/projects/{project_id}/digital-human/slides/{slide_id}/compose",
@@ -120,7 +129,7 @@ CAPABILITIES = [
         mcp_enabled=False,
     ),
     _cap(
-        id="digital_human.avatars.upload",
+        id="digital_human.avatars.upload", behavior_version="2",
         description="Upload one digital-human avatar image (multipart/form-data).",
         agent_api_method="POST", agent_api_path="/api/agent/v1/projects/{project_id}/digital-human/avatars/upload",
         cli_command="digital-human upload-avatar",
@@ -129,7 +138,7 @@ CAPABILITIES = [
         mcp_enabled=False,
     ),
     _cap(
-        id="digital_human.avatars.list",
+        id="digital_human.avatars.list", behavior_version="2",
         description="List uploaded digital-human avatars.",
         agent_api_method="GET", agent_api_path="/api/agent/v1/projects/{project_id}/digital-human/avatars",
         cli_command="digital-human avatars",

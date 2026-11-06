@@ -1,7 +1,7 @@
 # Agent Capability Matrix
 
-- **Agent API Version**: 3.1.0
-- **Contract Hash**: `3931edce64cdd9df`
+- **Agent API Version**: 3.2.0
+- **Contract Hash**: `eb5692f9afefadfb`
 - **Total Capabilities**: 275
 
 This document is auto-generated from `agent_contract/capabilities.py`.
@@ -330,7 +330,7 @@ The registry contributes **230** stable capability tools, plus the fixed search/
 - `ppt_digital_human_config_update` — Update digital-human configuration for a project.
 - `ppt_digital_human_health` — Check digital-human service availability and model readiness.
 - `ppt_digital_human_generate` — Submit one full-course presenter job using the selected avatar and current exported audio; returns job_id/status and propagates actual failures.
-- `ppt_project_delete` — Delete a project and all derived artifacts with optional revision checking and account-scoped idempotent replay, including after deletion. Destructive and irreversible.
+- `ppt_project_delete` — Delete a project and its derived artifacts with optional revision checking and account-scoped idempotent replay. Stale records can be removed when both recorded and current run directories are absent. Destructive and irreversible.
 - `ppt_checkpoint_list` — List the pipeline checkpoints available for a project.
 - `ppt_article_settings_get` — Read the global article-generation System Content prompt.
 - `ppt_article_settings_update` — Replace the global article-generation System Content prompt; blank content is rejected.

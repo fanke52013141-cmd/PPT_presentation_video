@@ -2715,7 +2715,7 @@
       "project.delete"
     ],
     "coverage": "complete",
-    "reason": "Project field/behavior review plus lifecycle, canvas/mode, ownership, no-op, CAS and deletion scenarios in checks/agent/test_project_lifecycle_acceptance.py and test_state_mask_annotation_acceptance.py. Target duration, pause stages and style template now exposed; audio freshness available via project.state; local run_dir remains server-owned."
+    "reason": "Shared Web and Agent deletion covers ownership, revision checks, and removal of stale records only when both recorded and canonical run directories are absent. Verified in checks/agent/test_project_lifecycle_acceptance.py."
   },
   "project_style_routes.get_project_profile_templates": {
     "source": "project_style_routes.py",

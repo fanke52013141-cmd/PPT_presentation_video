@@ -20,6 +20,7 @@ from account_context import get_current_account_id
 from project_storage import (
     UnsafeProjectPath,
     project_run_dir,
+    safe_identifier,
 )
 from canvas_profile_service import (
     DEFAULT_CANVAS_PROFILE,
@@ -576,11 +577,15 @@ class ProjectService:
                 project.id,
             )
         except UnsafeProjectPath as exc:
-            raise HTTPException(
-                status_code=500,
-                detail="项目运行目录安全校验失败",
-            ) from exc
-        if run_dir.exists():
+            # Old records can outlive a temporary or moved runs directory.
+            # Only remove the record when neither location contains project files.
+            if not self._is_missing_run_record(project):
+                raise HTTPException(
+                    status_code=500,
+                    detail="项目目录与当前工作区不匹配，请先核对项目文件位置。",
+                ) from exc
+            run_dir = None
+        if run_dir is not None and run_dir.exists():
             try:
                 shutil.rmtree(run_dir)
             except Exception as exc:
@@ -618,6 +623,23 @@ class ProjectService:
         db.delete(project)
         db.commit()
         return {"success": True, "message": "项目删除成功"}
+
+    def _is_missing_run_record(self, project: Project) -> bool:
+        try:
+            project_id = safe_identifier(project.id, label="project_id")
+            recorded = Path(project.run_dir).expanduser()
+            current = Path(self.dependencies.runs_root) / project_id
+            if not recorded.is_absolute() or recorded.name != project_id:
+                return False
+            for path in (recorded, current):
+                try:
+                    path.lstat()
+                except FileNotFoundError:
+                    continue
+                return False
+            return True
+        except (OSError, UnsafeProjectPath):
+            return False
 
     @staticmethod
     def _project(project_id: str, db: Session, account_id: str = "default") -> Project:

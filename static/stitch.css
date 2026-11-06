@@ -6861,7 +6861,7 @@ body.workspace-open :is(#step8-loading, #step8-pptx-loading):is([data-task-state
    ======================================================================= */
 .modal-content { overflow-x: hidden !important; }
 .modal-content.config-editor-modal { overflow: hidden !important; }
-#modal-create .modal-content,
+#modal-create .modal-content:not(.project-profile-modal),
 #modal-edit-project .modal-content,
 #modal-creation-config-style .modal-content,
 #modal-confirm .modal-content,

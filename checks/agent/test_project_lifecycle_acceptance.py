@@ -1,6 +1,8 @@
 import uuid
 from pathlib import Path
 
+import pytest
+
 from checks.agent.test_full_workflow_mocked import api, invoke  # noqa: F401
 
 
@@ -47,3 +49,32 @@ def test_project_fields_list_cas_state_account_isolation_and_delete(api):
     assert deleted.status_code == 200 and deleted.json()["deleted"] is True, deleted.text
     assert not root.exists()
     assert invoke(api, "project.get", {"project_id": pid}).status_code == 404
+
+
+@pytest.mark.parametrize("use_agent", [False, True])
+def test_delete_stale_run_record_preserves_existing_files(api, tmp_path, use_agent):
+    from database import Project, SessionLocal
+
+    created = invoke(api, "project.create", {"name": "Stale run directory"}).json()
+    pid = created["project"]["project_id"]
+    outside = tmp_path / pid
+    with SessionLocal() as db:
+        project = db.get(Project, pid)
+        original = Path(project.run_dir)
+        project.run_dir = str(outside)
+        db.commit()
+
+    def delete():
+        if use_agent:
+            return invoke(api, "project.delete", {"project_id": pid})
+        return api.delete(f"/api/projects/{pid}", headers={"X-PPT-Studio-Request": "1"})
+
+    assert delete().status_code == 500
+    assert original.is_dir()
+    original.rename(outside)
+    assert delete().status_code == 500
+    assert outside.is_dir()
+    outside.rename(tmp_path / "preserved")
+    assert delete().status_code == 200
+    with SessionLocal() as db:
+        assert db.get(Project, pid) is None

@@ -272,6 +272,9 @@ async function generateStep1Article() {
     const result = await API.post(
       `/api/projects/${projectId}/steps/1/generate-article`,
       { topic },
+      // The model request can take up to four minutes. Leave time for queueing
+      // and for the server to return its own timeout response.
+      { timeoutMs: 300000 },
     );
     // 文章生成可能等待数分钟：迟到响应不得把 A 项目生成的文章写进已切换
     // 到的 B 项目编辑器。

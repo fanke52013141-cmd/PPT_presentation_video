@@ -1,5 +1,5 @@
 {
-  "agent_api_version": "3.1.0",
+  "agent_api_version": "3.2.0",
   "capabilities": [
     {
       "behavior_version": "2",
@@ -3930,7 +3930,7 @@
       "version": "2.0"
     },
     {
-      "behavior_version": "3",
+      "behavior_version": "4",
       "bindings": {
         "expected_revision": "query",
         "idempotency_key": "query",
@@ -3941,8 +3941,8 @@
         "expected_revision_supported": true,
         "resource_scope": "project"
       },
-      "contract_revision": "820d89b347e08fe977d8dfb3",
-      "description": "Delete a project and all derived artifacts with optional revision checking and account-scoped idempotent replay, including after deletion. Destructive and irreversible.",
+      "contract_revision": "699eb00b7e83d7e25fbd58bb",
+      "description": "Delete a project and its derived artifacts with optional revision checking and account-scoped idempotent replay. Stale records can be removed when both recorded and current run directories are absent. Destructive and irreversible.",
       "destructive": true,
       "domain": "project",
       "id": "project.delete",
@@ -18313,5 +18313,5 @@
       "version": "1.0"
     }
   ],
-  "contract_hash": "3931edce64cdd9df"
+  "contract_hash": "eb5692f9afefadfb"
 }

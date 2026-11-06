@@ -457,9 +457,9 @@ CAPABILITIES: list[AgentCapability] = [
     AgentCapability(
         id="project.delete",
         version="1.1",
-        behavior_version="3",
+        behavior_version="4",
         status=CapabilityStatus.stable,
-        description="Delete a project and all derived artifacts with optional revision checking and account-scoped idempotent replay, including after deletion. Destructive and irreversible.",
+        description="Delete a project and its derived artifacts with optional revision checking and account-scoped idempotent replay. Stale records can be removed when both recorded and current run directories are absent. Destructive and irreversible.",
         request_model=ProjectDeleteRequest,
         response_model=ProjectDeleteResult,
         agent_api_method="DELETE",

@@ -137,5 +137,8 @@ def test_full_presenter_generation_reports_actual_source_preconditions(api, monk
     missing_avatar = invoke(api, "digital_human.generate", args)
     assert missing_avatar.status_code == 400, missing_avatar.text
     invoke(api, "digital_human.config.update", {**args, "config": {"avatar_id": "selected", "mode": "comfyui"}})
+    unowned_avatar = invoke(api, "digital_human.generate", args)
+    assert unowned_avatar.status_code == 403, unowned_avatar.text
+    monkeypatch.setattr(digital_human_routes, "project_avatars", lambda run_dir: {"selected": "fixture-digest"})
     stale_audio = invoke(api, "digital_human.generate", args)
     assert stale_audio.status_code == 409, stale_audio.text

@@ -677,7 +677,7 @@ def _add_portrait_source(project: Project, cfg: Dict[str, Any], job_payload: Dic
 
 def _submit_dh(project: Project, slide_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
     from digital_human_job_submission import PresenterSubmissionDependencies, submit_presenter_job
-    client = get_digital_human_client()
+
     def build(cfg):
         if cfg.get("mode") == "upload":
             raise HTTPException(status_code=409, detail="成品视频模式无需模型生成，请直接上传视频")
@@ -707,7 +707,7 @@ def _submit_dh(project: Project, slide_id: str, payload: Dict[str, Any]) -> Dict
     try:
         result = submit_presenter_job(project.run_dir, slide_id, PresenterSubmissionDependencies(
             read_config=lambda: _load_config(project), write_config=lambda cfg: _save_config(project, cfg),
-            build_payload=build, create_job=lambda body: client.create_job(payload=body),
+            build_payload=build, create_job=lambda body: get_digital_human_client().create_job(payload=body),
             impact_snapshot=lambda: snapshot_impacts(project.run_dir,
                 affected=("digital human media",), slide_ids=(slide_id,)),
         ))

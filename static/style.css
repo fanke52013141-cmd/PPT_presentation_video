@@ -12183,13 +12183,17 @@ body:not(.workspace-open) #page-home .stitch-video-progress {
 body:not(.workspace-open) #page-home .stitch-progress-segment { height: 6px !important; }
 body:not(.workspace-open) #page-home .stitch-video-play { width: 30px !important; height: 30px !important; }
 
-/* Library-card footer safeguard.
+/* Library-card metadata rhythm and footer safeguard.
    stitch.css is loaded after this file and previously forced the metadata
    column to exactly 68px.  A two-line title plus the progress readout then
    pushed the seven-segment track past the card's clipped bottom edge.  Use a
    deliberately more-specific selector so this remains authoritative despite
-   that load order.  The content grows only when a title wraps, avoiding a
-   large empty gap on the usual one-line card title. */
+   that load order, but let the content grow with its title instead of fixing
+   its height: the footer must never be clipped.
+   The title box always reserves two lines (2 x 14.5px).  A card whose title
+   fits on one line would otherwise start its 进度 footer one line (~14.5px)
+   earlier than a wrapped title next to it, so the progress rows of one grid
+   row read as misaligned. */
 html body:not(.workspace-open) #page-home .stitch-video-content {
   box-sizing: border-box !important;
   height: auto !important;
@@ -12200,8 +12204,8 @@ html body:not(.workspace-open) #page-home .stitch-video-content {
   padding: 6px 7px 8px !important;
 }
 html body:not(.workspace-open) #page-home .stitch-video-name {
-  min-height: 0 !important;
-  max-height: none !important;
+  min-height: 29px !important;
+  max-height: 29px !important;
   line-height: 14.5px !important;
 }
 html body:not(.workspace-open) #page-home .stitch-video-progress-block {

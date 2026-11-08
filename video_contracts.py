@@ -8,12 +8,24 @@ from typing import Any
 
 
 class VideoRenderError(RuntimeError):
-    """HTTP-aware application error raised by video services."""
+    """HTTP-aware application error raised by video services.
 
-    def __init__(self, status_code: int, detail: Any) -> None:
+    ``repair_actions`` lets the Agent adapter describe the actual recovery
+    without parsing the human-readable message (for example confirming audio
+    versus regenerating a stale digital-human presenter).
+    """
+
+    def __init__(
+        self,
+        status_code: int,
+        detail: Any,
+        *,
+        repair_actions: list[dict[str, Any]] | None = None,
+    ) -> None:
         super().__init__(str(detail))
         self.status_code = status_code
         self.detail = detail
+        self.repair_actions = list(repair_actions or [])
 
 
 @dataclass(frozen=True)

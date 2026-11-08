@@ -1,7 +1,7 @@
 # Agent Capability Matrix
 
-- **Agent API Version**: 3.2.0
-- **Contract Hash**: `eb5692f9afefadfb`
+- **Agent API Version**: 3.3.0
+- **Contract Hash**: `9cb4a9129233a89f`
 - **Total Capabilities**: 275
 
 This document is auto-generated from `agent_contract/capabilities.py`.
@@ -11,7 +11,7 @@ Do not edit manually — run `python scripts/generate_agent_contracts.py`.
 
 | Capability ID | Version | Status | Method | Agent API Path | MCP Tool | MCP enabled | CLI Command | Service Ref | Long-running | Destructive |
 |---|---|---|---|---|---|---|---|---|---|---|
-| `project.state` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/state` | `ppt_project_state` | Yes | `project state` | `agent_workflow_service.inspect_project_state` | No | No |
+| `project.state` | 1.1 | stable | GET | `/api/agent/v1/projects/{project_id}/state` | `ppt_project_state` | Yes | `project state` | `agent_workflow_service.inspect_project_state` | No | No |
 | `operation.get` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/operations/{operation_id}` | `ppt_operation_get` | Yes | `operation get` | `agent_operation_service.AgentOperationService.get` | No | No |
 | `operation.list` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/operations` | `ppt_operation_list` | Yes | `operation list` | `agent_operation_service.AgentOperationService.list` | No | No |
 | `operation.cancel` | 1.0 | stable | POST | `/api/agent/v1/projects/{project_id}/operations/{operation_id}/cancel` | `ppt_operation_cancel` | Yes | `operation cancel` | `agent_operation_service.AgentOperationService.cancel` | No | No |
@@ -32,14 +32,14 @@ Do not edit manually — run `python scripts/generate_agent_contracts.py`.
 | `image.regenerate` | 1.1 | stable | POST | `/api/agent/v1/projects/{project_id}/images/{slide_id}/regenerate` | `ppt_image_regenerate` | Yes | `image regenerate` | `image_workflow_service.generate_slide_image` | Yes | No |
 | `narration.update` | 1.1 | stable | PATCH | `/api/agent/v1/projects/{project_id}/narration/{slide_id}` | `ppt_narration_update` | Yes | `narration update` | `storyboard_service.update_narration` | No | No |
 | `tts.synthesize` | 2.0 | stable | POST | `/api/agent/v1/projects/{project_id}/tts` | `ppt_tts_synthesize` | Yes | `tts synthesize` | `tts_service.TtsAsyncService.create_job` | Yes | No |
-| `video.render` | 2.1 | stable | POST | `/api/agent/v1/projects/{project_id}/videos/render` | `ppt_video_render` | Yes | `video render` | `video_render_service.start_render` | Yes | No |
+| `video.render` | 2.2 | stable | POST | `/api/agent/v1/projects/{project_id}/videos/render` | `ppt_video_render` | Yes | `video render` | `video_render_service.start_render` | Yes | No |
 | `artifacts.list` | 1.1 | stable | GET | `/api/agent/v1/projects/{project_id}/artifacts` | `ppt_artifacts_list` | Yes | `artifacts list` | `database.ArtifactRecord` | No | No |
 | `artifact.get` | 1.1 | stable | GET | `/api/agent/v1/projects/{project_id}/artifacts/{artifact_id}` | `ppt_artifact_get` | Yes | `artifact get` | `database.ArtifactRecord` | No | No |
 | `diagnostics` | 1.0 | stable | GET | `/api/agent/v1/diagnostics` | `ppt_diagnostics` | Yes | `diagnostics` | `agent_api.routes.get_diagnostics` | No | No |
-| `digital_human.config.get` | 1.2 | stable | GET | `/api/agent/v1/projects/{project_id}/digital-human/config` | `ppt_digital_human_config_get` | Yes | `digital-human config` | `digital_human_routes.router` | No | No |
-| `digital_human.config.update` | 1.2 | stable | PATCH | `/api/agent/v1/projects/{project_id}/digital-human/config` | `ppt_digital_human_config_update` | Yes | `digital-human config --set` | `digital_human_routes.router` | No | No |
-| `digital_human.health` | 1.1 | stable | GET | `/api/agent/v1/projects/{project_id}/digital-human/health` | `ppt_digital_human_health` | Yes | `digital-human health` | `digital_human_client.get_digital_human_client` | No | No |
-| `digital_human.generate` | 2.0 | stable | POST | `/api/agent/v1/projects/{project_id}/digital-human/generate-full` | `ppt_digital_human_generate` | Yes | `digital-human generate` | `digital_human_routes.generate_dh_full` | Yes | No |
+| `digital_human.config.get` | 1.3 | stable | GET | `/api/agent/v1/projects/{project_id}/digital-human/config` | `ppt_digital_human_config_get` | Yes | `digital-human config` | `digital_human_routes.router` | No | No |
+| `digital_human.config.update` | 1.3 | stable | PATCH | `/api/agent/v1/projects/{project_id}/digital-human/config` | `ppt_digital_human_config_update` | Yes | `digital-human config --set` | `digital_human_routes.router` | No | No |
+| `digital_human.health` | 1.2 | stable | GET | `/api/agent/v1/projects/{project_id}/digital-human/health` | `ppt_digital_human_health` | Yes | `digital-human health` | `digital_human_client.get_digital_human_client` | No | No |
+| `digital_human.generate` | 2.1 | stable | POST | `/api/agent/v1/projects/{project_id}/digital-human/generate-full` | `ppt_digital_human_generate` | Yes | `digital-human generate` | `digital_human_routes.generate_dh_full` | Yes | No |
 | `project.delete` | 1.1 | stable | DELETE | `/api/agent/v1/projects/{project_id}` | `ppt_project_delete` | Yes | `project delete` | `project_service.ProjectService.delete` | No | Yes |
 | `checkpoint.list` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/checkpoints` | `ppt_checkpoint_list` | Yes | `checkpoint list` | `agent_api.routes.agent_list_checkpoints` | No | No |
 | `image.get` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/slides/{slide_id}/image` | `ppt_image_get` | No | `image get` | `image_workflow_service.get_slide_image_file` | No | No |
@@ -195,9 +195,9 @@ Do not edit manually — run `python scripts/generate_agent_contracts.py`.
 | `annotation.editor_ink.get` | 1.2 | stable | GET | `/api/agent/v1/projects/{project_id}/annotations/slides/{slide_id}/editor-inks/{annotation_id}/{stroke_index}` | `ppt_annotation_editor_ink_get` | No | `annotation editor-ink` | `annotation_service.AnnotationService.annotation_editor_ink` | No | No |
 | `annotation.ink.get` | 1.1 | stable | GET | `/api/agent/v1/projects/{project_id}/annotations/slides/{slide_id}/inks/{build_id}/{annotation_id}/{stroke_index}/{frame_index}` | `ppt_annotation_ink_get` | No | `annotation ink` | `annotation_service.AnnotationService.annotation_asset` | No | No |
 | `annotation.preview.download` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/annotations/slides/{slide_id}/export-previews/{token}` | `ppt_annotation_preview_download` | No | `annotation preview` | `annotation_service preview_exports` | No | No |
-| `digital_human.motion.upload` | 1.0 | stable | POST | `/api/agent/v1/projects/{project_id}/digital-human/motion` | `ppt_digital_human_motion_upload` | No | `digital-human upload-motion` | `digital_human_routes.upload_dh_motion` | No | No |
-| `digital_human.slide.generate` | 1.0 | stable | POST | `/api/agent/v1/projects/{project_id}/digital-human/slides/{slide_id}/generate` | `ppt_digital_human_slide_generate` | Yes | `digital-human generate-slide` | `digital_human_routes.generate_dh` | Yes | No |
-| `digital_human.jobs.get` | 1.2 | stable | GET | `/api/agent/v1/projects/{project_id}/digital-human/jobs/{job_id}` | `ppt_digital_human_jobs_get` | Yes | `digital-human job` | `digital_human_routes.get_dh_job` | No | No |
+| `digital_human.motion.upload` | 1.1 | stable | POST | `/api/agent/v1/projects/{project_id}/digital-human/motion` | `ppt_digital_human_motion_upload` | No | `digital-human upload-motion` | `digital_human_routes.upload_dh_motion` | No | No |
+| `digital_human.slide.generate` | 1.1 | stable | POST | `/api/agent/v1/projects/{project_id}/digital-human/slides/{slide_id}/generate` | `ppt_digital_human_slide_generate` | Yes | `digital-human generate-slide` | `digital_human_routes.generate_dh` | Yes | No |
+| `digital_human.jobs.get` | 1.3 | stable | GET | `/api/agent/v1/projects/{project_id}/digital-human/jobs/{job_id}` | `ppt_digital_human_jobs_get` | Yes | `digital-human job` | `digital_human_routes.get_dh_job` | No | No |
 | `digital_human.slide_video.get` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/digital-human/slides/{slide_id}/video` | `ppt_digital_human_slide_video_get` | No | `digital-human slide-video` | `digital_human_routes.get_dh_slide_video` | No | No |
 | `digital_human.slide.compose` | 1.0 | stable | POST | `/api/agent/v1/projects/{project_id}/digital-human/slides/{slide_id}/compose` | `ppt_digital_human_slide_compose` | Yes | `digital-human compose` | `digital_human_routes.compose_dh_slide` | Yes | No |
 | `digital_human.composite_video.get` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/digital-human/slides/{slide_id}/composite-video` | `ppt_digital_human_composite_video_get` | No | `digital-human composite-video` | `digital_human_routes.get_dh_composite_video` | No | No |
@@ -302,7 +302,7 @@ Do not edit manually — run `python scripts/generate_agent_contracts.py`.
 
 The registry contributes **230** stable capability tools, plus the fixed search/describe/invoke discovery tools:
 
-- `ppt_project_state` — Observe eight visible steps, saved internal statuses, source-owned artifact checks, resource hashes, annotation decision, optional presenter state, pending impacts and authorized candidate actions. Read-only; not a render-success guarantee or a global concurrency lock. Actions marked requires_input need additional schema-valid input.
+- `ppt_project_state` — Observe eight visible steps, saved internal statuses, source-owned artifact checks, resource hashes, annotation decision, optional presenter readiness (motion/presenter/audio issues), render blocking reasons, pending impacts and authorized candidate actions. Read-only; not a render-success guarantee or a global concurrency lock. Actions marked requires_input need additional schema-valid input.
 - `ppt_operation_get` — Read an exact durable job or pipeline run by operation_id; never substitute latest.
 - `ppt_operation_list` — List project operations across durable jobs and pipeline history, with pagination.
 - `ppt_operation_cancel` — Request exact TTS/video cancellation at a safe boundary. accepted does not imply cancelled; poll operation.get. Other producers explicitly report unsupported.
@@ -322,14 +322,14 @@ The registry contributes **230** stable capability tools, plus the fixed search/
 - `ppt_image_regenerate` — Regenerate a single slide image with optional modification instruction.
 - `ppt_narration_update` — Update narration text for a specific slide.
 - `ppt_tts_synthesize` — Submit durable background TTS synthesis for the whole project. Returns operation_id for operation.get; slide_ids is not supported yet.
-- `ppt_video_render` — Start video rendering for the project.
+- `ppt_video_render` — Start video rendering for the project. Submission is rejected when image provenance, audio confirmation or an enabled digital-human presenter (motion/presenter/audio freshness) is not ready.
 - `ppt_artifacts_list` — List registered project artifacts with exact per-artifact resource URIs, never substituting the latest output. Hashes are computed by artifact.get.
 - `ppt_artifact_get` — Get exact artifact metadata, controlled download path and current SHA-256. Hash is null when its file is unavailable; no arbitrary file paths are accepted.
 - `ppt_diagnostics` — Get system diagnostics including API version, capabilities, and health checks.
-- `ppt_digital_human_config_get` — Get digital-human configuration for a project.
-- `ppt_digital_human_config_update` — Update digital-human configuration for a project.
-- `ppt_digital_human_health` — Check digital-human service availability and model readiness.
-- `ppt_digital_human_generate` — Submit one full-course presenter job using the selected avatar and current exported audio; returns job_id/status and propagates actual failures.
+- `ppt_digital_human_config_get` — Get the normalized digital-human configuration (enabled, mode, motion_source, upload_start_sec, upload_short_video_policy, window layout), per-slide presenter state, audio readiness and current driving-motion summary.
+- `ppt_digital_human_config_update` — Update the digital-human configuration patch (only supplied fields change): enabled, mode (portrait/upload/comfyui/generate), motion_source (default/custom), upload_start_sec, upload_short_video_policy (reject/loop), avatar_id, sync_mode and window layout. Business validation errors are returned as typed Agent errors.
+- `ppt_digital_human_health` — Check digital-human service availability and model readiness, including portrait (LivePortrait + MuseTalk) readiness and default motion template availability.
+- `ppt_digital_human_generate` — Submit one full-course presenter job using the selected avatar, the current exported full audio and the configured mode (portrait uses the driving motion source; upload mode rejects generation). Returns job_id/status and propagates actual failures.
 - `ppt_project_delete` — Delete a project and its derived artifacts with optional revision checking and account-scoped idempotent replay. Stale records can be removed when both recorded and current run directories are absent. Destructive and irreversible.
 - `ppt_checkpoint_list` — List the pipeline checkpoints available for a project.
 - `ppt_article_settings_get` — Read the global article-generation System Content prompt.
@@ -457,8 +457,8 @@ The registry contributes **230** stable capability tools, plus the fixed search/
 - `ppt_annotation_jobs_get` — Read one annotation job by id; ownership is validated against the account.
 - `ppt_annotation_jobs_cancel` — Request cancellation of one annotation job at a safe boundary.
 - `ppt_annotation_preview_export` — Export an annotation preview video for one slide; returns a token addressable by the download transport.
-- `ppt_digital_human_slide_generate` — Generate the digital-human presenter video for one slide (ComfyUI/Minimax backend per configuration).
-- `ppt_digital_human_jobs_get` — Read one digital-human generation job by id.
+- `ppt_digital_human_slide_generate` — Generate the digital-human presenter video for one slide. portrait mode requires the selected photo, an available driving motion source and confirmed course audio; upload mode rejects generation (use digital_human.video.upload); legacy comfyui/generate follow the configured backend. Long-running.
+- `ppt_digital_human_jobs_get` — Read one digital-human generation job by id. waiting_external, publishing and submission_unknown are non-terminal; stale marks a result built from changed photo, motion or audio sources.
 - `ppt_digital_human_slide_compose` — Compose the slide video with the digital-human presenter overlay.
 - `ppt_digital_human_audio_export` — Export the full digital-human narration audio for the project.
 - `ppt_digital_human_avatars_list` — List uploaded digital-human avatars.

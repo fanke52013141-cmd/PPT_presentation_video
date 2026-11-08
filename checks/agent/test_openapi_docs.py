@@ -135,7 +135,14 @@ def test_openapi_includes_path_parameters_request_and_response_schemas():
 
     project_param = next(item for item in update["parameters"] if item["name"] == "project_id")
     assert project_param["in"] == "path"
-    assert update["requestBody"]["content"]["application/json"]["schema"]["properties"]["config"]["type"] == "object"
+    request_schema = update["requestBody"]["content"]["application/json"]["schema"]
+    config_schema = request_schema["properties"]["config"]
+    if "$ref" in config_schema:
+        # Typed nested payloads are emitted as a $ref into the shared $defs.
+        definition = config_schema["$ref"].rsplit("/", 1)[-1]
+        config_schema = request_schema["$defs"][definition]
+    assert config_schema["type"] == "object"
+    assert "mode" in config_schema["properties"]
     assert "schema" in update["responses"]["200"]["content"]["application/json"]
 
     pipeline_run = spec["paths"]["/api/agent/v1/projects/{project_id}/runs"]["post"]

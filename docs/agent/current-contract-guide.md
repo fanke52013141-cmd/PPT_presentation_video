@@ -1,6 +1,6 @@
 # 当前 Agent 契约接入
 
-本页描述已实现的 API 3.0.0 接入方式，URL 命名空间仍为 `/api/agent/v1`。旧 Agent 规范无需兼容。262 个业务入口中，261 项 complete、1 项 Web 会话切换 exempt，pending / partial 均清零；场景证据见 `feature-coverage.md` 与 `all-optimization-2026-10-30.md`。
+本页描述已实现的 API 3.3.0 接入方式，URL 命名空间仍为 `/api/agent/v1`。旧 Agent 规范无需兼容。263 个业务入口中，262 项 complete、1 项 Web 会话切换 exempt，pending / partial 均清零；场景证据见 `feature-coverage.md`、`all-optimization-2026-10-30.md` 与 `checks/agent/test_digital_human_motion_acceptance.py`。
 
 ## 认证与账号
 
@@ -175,6 +175,49 @@ API 2.5.0 起开放可见 Step 1（文章）与可见 Step 2（分镜规划）�
 method/path 走专用 HTTP 传输，不能用 invoke 下载或上传。自由形态的业务载荷
 使用 `payload` 信封字段，字段级校验仍由 source-owned 服务负责；
 `project.change_preview` 提供合约变更的只读影响预检。
+
+## 数字人讲师（API 3.3.0）
+
+可见 Step 7 提供两种讲师模式：`portrait`（照片 + 动作视频，先生成动作迁移底片再按课程旁白对口型，默认）与
+`upload`（直传成品视频，跳过模型生成）；`comfyui` / `generate` 作为旧模式继续可用。
+
+配置通过 `digital_human.config.get/update` 读写，`config` 是带字段说明与枚举的类型化补丁（只提交需要修改的字段）：
+
+| 字段 | 取值 / 默认 | 说明 |
+|---|---|---|
+| `enabled` | 布尔 / `false` | 开启后 Step 8 才会合成讲师窗口 |
+| `mode` | `portrait` `comfyui` `upload` `generate` / `portrait` | 生成或直传模式 |
+| `motion_source` | `default` `custom` / `default` | 平台内置模板或项目上传的动作视频 |
+| `upload_start_sec` | ≥ 0 / `0` | upload 模式取画面起点 |
+| `upload_short_video_policy` | `reject` `loop` / `reject` | 成品视频短于旁白时的处理 |
+| `shape` / `avatar_id` / `circle` / `video` / `position` / `border` | — | 讲师窗口与形象布局 |
+
+动作视频上传是 `file_upload` 传输（`POST /api/agent/v1/projects/{project_id}/digital-human/motion`），
+`describe` 返回 `invocable=false`，**不能经 MCP/`invoke` 调用**；同字节重复上传返回 `changed=false`。
+CLI 便捷入口：
+
+```powershell
+.\.venv\Scripts\python.exe -m cli.pptctl digital-human upload-motion --project <project_id> --file motion.mp4
+```
+
+讲师照片、成品视频、ComfyUI 工作流同样属于上传类能力，只能走 HTTP/`AgentClient.upload_file()`。
+`digital_human.avatars.list` 只返回本项目上传并校验过的形象；相同字节的照片会复用已有 `avatar_id`。
+
+生成前置条件由业务层统一校验，适配器把业务 `HTTPException` 转成机器可读错误码：
+缺少讲师照片 → `VALIDATION_ERROR`(400)；照片不属于本项目 → `FORBIDDEN`(403)；
+`upload` 模式调用生成、音频未确认、整段音频过期、动作视频缺失 → `CONFLICT`(409)；
+数字人服务不可用 → `UPSTREAM_UNAVAILABLE`(503)。`waiting_external` / `publishing` / `submission_unknown`
+是非终态，继续查询原 `job_id`，不要因客户端超时重新提交。
+
+新鲜度同时暴露在两处：`digital_human.config.get.slides[*].video_stale`（含动作/照片来源指纹与音频哈希）
+与 `project.state`。`project.state` 的数字人阶段给出 `checks.motion` / `checks.presenter` / `checks.audio`
+及 `module_state`（`disabled` / `ready` / `blocked`），`render_submission.presenter_readiness` 汇总
+`motion_missing`、`upload_video_missing`、`presenter_video_missing`、`presenter_source_stale`、
+`presenter_audio_stale`。数字人启用但未就绪时，`video.render` 在提交阶段即返回
+`RENDER_PRECONDITION_FAILED`(409)，`repair_actions` 指向 `inspect_presenter_readiness` 与
+`regenerate_presenter`，不会先启动 Remotion 再失败。
+`digital_human.health` 额外返回 `portrait_model_ready`（LivePortrait + MuseTalk 环境）与
+`default_motion_available`（平台默认动作模板）。
 
 ## 精确产物与二进制下载
 

@@ -205,6 +205,57 @@ def workflow(api):
         assert tts.run_tts_command_with_retries is not None
 
 
+# ---- 数字人讲师就绪门禁（真实项目存储 + 已确认音频） ----
+
+def test_presenter_readiness_gates_render_submission(workflow, api):
+    from pathlib import Path
+
+    from database import Project, SessionLocal
+
+    pid = workflow["project_id"]
+    with SessionLocal() as db:
+        root = Path(db.get(Project, pid).run_dir)
+
+    enabled = invoke(api, "digital_human.config.update", {
+        "project_id": pid, "config": {"enabled": True, "mode": "portrait"},
+    })
+    assert enabled.status_code == 200, enabled.text
+
+    state = invoke(api, "project.state", {"project_id": pid})
+    assert state.status_code == 200, state.text
+    submission = state.json()["render_submission"]
+    assert submission["can_submit"] is False
+    assert any("讲师视频" in (item.get("message") or "") for item in submission["blocking"]), submission
+    assert submission["presenter_readiness"]["ready"] is False
+    assert "presenter_video_missing" in submission["presenter_readiness"]["issues"]
+
+    blocked_render = invoke(api, "video.render", {"project_id": pid})
+    assert blocked_render.status_code == 409, blocked_render.text
+    error = blocked_render.json()["error"]
+    assert error["code"] == "RENDER_PRECONDITION_FAILED"
+    assert any(
+        action.get("action") == "regenerate_presenter"
+        for action in error["repair_actions"]
+    ), error
+
+    # upload 模式已有成品视频时，讲师门禁不再阻塞（其余输入本就就绪）
+    digi = root / "planning" / "digital_human"
+    digi.mkdir(parents=True, exist_ok=True)
+    (digi / "digi_upload.mp4").write_bytes(b"placeholder-presenter-video")
+    switched = invoke(api, "digital_human.config.update", {
+        "project_id": pid, "config": {"enabled": True, "mode": "upload"},
+    })
+    assert switched.status_code == 200, switched.text
+    ready = invoke(api, "project.state", {"project_id": pid}).json()["render_submission"]
+    assert ready["can_submit"] is True, ready
+    assert ready["presenter_readiness"]["ready"] is True
+
+    # 共享 fixture 项目恢复为禁用，避免影响后续用例
+    assert invoke(api, "digital_human.config.update", {
+        "project_id": pid, "config": {"enabled": False},
+    }).status_code == 200
+
+
 # ---- 规划执行（LLM mock 下全链路真实） ----
 
 def test_storyboard_executions_real_persistence(workflow, api):

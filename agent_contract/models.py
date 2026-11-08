@@ -33,7 +33,14 @@ from agent_contract.domains.artifacts import (  # noqa: F401
     ArtifactGetResult, ArtifactInfo, ArtifactsListRequest, ArtifactsListResult,
 )
 from agent_contract.domains.digital_human import (  # noqa: F401
-    DigitalHumanConfigResult, DigitalHumanConfigUpdateRequest,
+    DigitalHumanCircle,
+    DigitalHumanConfigPatch,
+    DigitalHumanConfigResult,
+    DigitalHumanConfigUpdateRequest,
+    DigitalHumanConfigView,
+    DigitalHumanHealthResult,
+    DigitalHumanMotionSummary,
+    DigitalHumanVideoLayout,
 )
 from agent_contract.domains.images import (  # noqa: F401
     ImageRegenerateRequest, ImageRegenerateResult, ImageGenerateRequest, ImageCandidateApplyRequest,

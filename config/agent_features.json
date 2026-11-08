@@ -10,8 +10,8 @@
     ],
     "owner": "digital_human_source_service.py",
     "capabilities": ["digital_human.motion.upload"],
-    "coverage": "partial",
-    "reason": "Web and Agent share project-owned motion storage; real transfer and upload scenario acceptance is in progress."
+    "coverage": "complete",
+    "reason": "Agent HTTP multipart acceptance: real upload of the bundled driving video, decoded metadata, byte-identical no-op and config motion summary in checks/agent/test_digital_human_motion_acceptance.py; the binary transport is correctly non-invocable through MCP."
   },
   "account_routes.accounts": {
     "source": "account_routes.py",

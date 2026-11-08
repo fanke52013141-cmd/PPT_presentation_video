@@ -88,3 +88,73 @@ def presenter_audio_stale(run_dir: str | Path, entry: dict, slide_id: str) -> bo
         path = Path(run_dir) / "planning/digital_human/audio_full.mp3"
         return not full_audio_current(run_dir) or stored != sha256_file(path)
     return stored != sha256_file(Path(run_dir) / "slides" / slide_id / "voice.mp3")
+
+
+def presenter_readiness(run_dir: str | Path, config: dict | None = None) -> dict:
+    """Read-only readiness of the optional presenter for final composition.
+
+    Shared by ``project.state`` observation and the final render precondition so
+    the Agent never receives ``can_submit=true`` for a presenter that the render
+    stage would reject later.  Returns explicit machine-readable issue codes:
+
+    - ``motion_missing``: portrait mode has no default template and no upload.
+    - ``upload_video_missing``: upload mode has not received its finished video.
+    - ``presenter_video_missing``: model-generated full presenter is absent.
+    - ``presenter_source_stale``: photo or driving video changed since publish.
+    - ``presenter_audio_stale``: confirmed course audio changed since publish.
+    """
+    from digital_human_contracts import load_config
+
+    root = Path(run_dir)
+    cfg = config if isinstance(config, dict) else load_config(root)
+    enabled = bool(cfg.get("enabled"))
+    mode = str(cfg.get("mode") or "portrait").strip().lower()
+    digi_dir = root / "planning" / "digital_human"
+    checks: dict[str, list[str]] = {"motion": [], "presenter": [], "audio": []}
+    motion = {"source": str(cfg.get("motion_source") or "default"), "exists": False}
+
+    if not enabled:
+        return {
+            "enabled": False, "mode": mode, "required": False, "ready": True,
+            "motion": motion,
+            "presenter": {"video_exists": False, "source_stale": False, "audio_stale": False},
+            "checks": checks, "issues": [],
+        }
+
+    if mode == "portrait":
+        motion = motion_summary(root, motion["source"])
+        if not motion.get("exists"):
+            checks["motion"].append("motion_missing")
+        video = digi_dir / "digi_full.mp4"
+        entry = (cfg.get("slides") or {}).get("full") or {}
+        source_stale = bool(video.is_file() and presenter_source_stale(root, cfg, entry))
+        audio_stale = bool(video.is_file() and presenter_audio_stale(root, entry, "full"))
+    elif mode == "upload":
+        video = digi_dir / "digi_upload.mp4"
+        source_stale = False
+        audio_stale = False
+    else:
+        video = digi_dir / "digi_full.mp4"
+        source_stale = False
+        audio_stale = False
+
+    video_exists = video.is_file() and video.stat().st_size > 0
+    if not video_exists:
+        checks["presenter"].append(
+            "upload_video_missing" if mode == "upload" else "presenter_video_missing"
+        )
+    if source_stale:
+        checks["presenter"].append("presenter_source_stale")
+    if audio_stale:
+        checks["audio"].append("presenter_audio_stale")
+    issues = [issue for reasons in checks.values() for issue in reasons]
+    return {
+        "enabled": True, "mode": mode, "required": True, "ready": not issues,
+        "motion": motion,
+        "presenter": {
+            "video_exists": video_exists,
+            "source_stale": source_stale,
+            "audio_stale": audio_stale,
+        },
+        "checks": checks, "issues": issues,
+    }

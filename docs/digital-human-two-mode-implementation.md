@@ -45,3 +45,10 @@
 本机模型放在独立环境。LivePortrait 源码版本为 `9b294b3d0536135442ea73cb01e6cb3ca7029dd3`。MuseTalk 源码版本为 `0a89dec45a0192b824e3cf4daf96c239440c5ed8`，通过 `scripts/configure_musetalk_windows.py` 配置 Windows 上的 RTMCC 依赖。仓库内置默认动作模板 `presenter_templates/lecturer_default.mp4`，为 10 秒、960×960 的无声方形原生画面。照片模式可在横竖屏项目复用该模板，只迁移头部动作和表情，再用课程旁白对口型。直传成品视频保留原画面和手势，使用课程旁白合成，口型沿用上传素材。部署时可通过 `PPT_PORTRAIT_ASSETS_DIR` 指定模型资产根目录，该目录内同名模板可覆盖仓库默认模板。
 
 验收使用仓库示例位图和真实旁白。正式导出经第 8 步提交、轮询和下载接口，两个成品均带 `.render.json`，记录讲师合成已执行。开头、中段、结尾抽帧可见小窗与字幕同时呈现，示例课件右下角的部分图示被默认小窗遮住。当前 Work 设置关闭了本地浏览器控制，未完成浏览器手动点击验收。
+
+## Agent 契约同步（API 3.3.0）
+
+- 双模式全部业务路由均有 Agent 能力；新增 `digital_human.motion.upload`（`file_upload` 传输，MCP 不可 invoke，CLI `digital-human upload-motion`），覆盖状态为 `complete`，验收见 `checks/agent/test_digital_human_motion_acceptance.py`。
+- `digital_human.config.update` 的 `config` 改为类型化补丁：`mode`、`motion_source`、`upload_short_video_policy` 以枚举暴露，`upload_start_sec` 声明非负下限；`digital_human.config.get` 返回归一化配置、`motion` 摘要与逐页 `video_stale`。
+- `project.state` 的数字人阶段新增 `checks.motion/presenter/audio` 与 `module_state`，`render_submission.presenter_readiness` 汇总就绪问题；`video.render` 在讲师启用但未就绪时以 `RENDER_PRECONDITION_FAILED`(409) 提前拒绝，并给出 `inspect_presenter_readiness` / `regenerate_presenter` 修复动作。
+- 数字人适配器把业务 `HTTPException` 转为机器可读错误码（`VALIDATION_ERROR` / `FORBIDDEN` / `CONFLICT` / `UPSTREAM_UNAVAILABLE`）；`digital_human.health` 返回带类型的 `portrait_model_ready` 与 `default_motion_available`。

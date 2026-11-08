@@ -34,11 +34,11 @@ def test_agent_config_update_reuses_canonical_config_writer(tmp_path):
             "p1", DigitalHumanConfigUpdateRequest(config={"enabled": True, "shape": "invalid"}), MagicMock(),
         )
 
-    assert result.config["enabled"] is True
-    assert result.config["shape"] == "circle"
+    assert result.config.enabled is True
+    assert result.config.shape == "circle"
     assert project._status["8"] == "pending_reconfirmation"
     written = json.loads((tmp_path / "planning" / "digital_human.json").read_text(encoding="utf-8"))
-    assert written == result.config
+    assert written == result.config.model_dump()
 
 
 # ------------------------------------------------------------------

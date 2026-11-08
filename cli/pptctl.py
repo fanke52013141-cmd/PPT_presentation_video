@@ -505,6 +505,26 @@ def cmd_digital_human_generate(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
+def cmd_digital_human_upload_motion(args: argparse.Namespace) -> None:
+    """Upload the custom driving video used by portrait motion transfer."""
+    from agent_client.transfers import upload_file
+
+    client = AgentClient(base_url=args.base_url, app_token=args.token)
+    try:
+        result = upload_file(
+            client,
+            f"/api/agent/v1/projects/{args.project}/digital-human/motion",
+            args.file,
+            field="file",
+            content_type="video/mp4",
+            max_bytes=args.max_bytes,
+        )
+    except (AgentClientError, ValueError) as e:
+        _print_error(str(e))
+        sys.exit(1)
+    _print_json(result)
+
+
 # ---------------------------------------------------------------------------
 # Batch commands
 # ---------------------------------------------------------------------------
@@ -877,6 +897,18 @@ def build_parser() -> argparse.ArgumentParser:
     dh_gen = dh_sub.add_parser("generate", help="Generate digital-human videos for all slides")
     dh_gen.add_argument("--project", required=True)
     dh_gen.set_defaults(func=cmd_digital_human_generate)
+
+    dh_motion = dh_sub.add_parser(
+        "upload-motion",
+        help="Upload the custom driving video for portrait motion transfer (multipart)",
+    )
+    dh_motion.add_argument("--project", required=True)
+    dh_motion.add_argument("--file", required=True, help="Path to the driving video (mp4/mov/mkv/webm/avi)")
+    dh_motion.add_argument(
+        "--max-bytes", type=int, default=200 * 1024 * 1024,
+        help="Upload size limit in bytes (default 200MB)",
+    )
+    dh_motion.set_defaults(func=cmd_digital_human_upload_motion)
 
     # batch
     batch_parser = subparsers.add_parser("batch", help="Batch operations across multiple projects")

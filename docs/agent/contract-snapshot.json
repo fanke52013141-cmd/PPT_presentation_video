@@ -1,8 +1,8 @@
 {
-  "agent_api_version": "3.2.0",
+  "agent_api_version": "3.3.0",
   "capabilities": [
     {
-      "behavior_version": "2",
+      "behavior_version": "3",
       "bindings": {
         "project_id": "path"
       },
@@ -11,8 +11,8 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "fbf4a197bafb6332363a2ade",
-      "description": "Observe eight visible steps, saved internal statuses, source-owned artifact checks, resource hashes, annotation decision, optional presenter state, pending impacts and authorized candidate actions. Read-only; not a render-success guarantee or a global concurrency lock. Actions marked requires_input need additional schema-valid input.",
+      "contract_revision": "85ac16d203864282f018203f",
+      "description": "Observe eight visible steps, saved internal statuses, source-owned artifact checks, resource hashes, annotation decision, optional presenter readiness (motion/presenter/audio issues), render blocking reasons, pending impacts and authorized candidate actions. Read-only; not a render-success guarantee or a global concurrency lock. Actions marked requires_input need additional schema-valid input.",
       "destructive": false,
       "domain": "project",
       "id": "project.state",
@@ -205,7 +205,7 @@
       ],
       "response_kind": "json",
       "status": "stable",
-      "version": "1.0"
+      "version": "1.1"
     },
     {
       "behavior_version": "2",
@@ -3151,7 +3151,7 @@
       "version": "2.0"
     },
     {
-      "behavior_version": "4",
+      "behavior_version": "5",
       "bindings": {
         "idempotency_key": "body",
         "project_id": "path"
@@ -3161,8 +3161,8 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "67b4fd151b7a8f40fe5a943a",
-      "description": "Start video rendering for the project.",
+      "contract_revision": "3ef9d07ac1724e473ee5cd06",
+      "description": "Start video rendering for the project. Submission is rejected when image provenance, audio confirmation or an enabled digital-human presenter (motion/presenter/audio freshness) is not ready.",
       "destructive": false,
       "domain": "video",
       "id": "video.render",
@@ -3236,7 +3236,7 @@
       ],
       "response_kind": "json",
       "status": "stable",
-      "version": "2.1"
+      "version": "2.2"
     },
     {
       "behavior_version": "3",
@@ -3640,7 +3640,7 @@
       "version": "1.0"
     },
     {
-      "behavior_version": "4",
+      "behavior_version": "5",
       "bindings": {
         "project_id": "path"
       },
@@ -3649,8 +3649,8 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "2fd4a10428c79340d81c78c4",
-      "description": "Get digital-human configuration for a project.",
+      "contract_revision": "b96bb35e9f52936c5fcff50a",
+      "description": "Get the normalized digital-human configuration (enabled, mode, motion_source, upload_start_sec, upload_short_video_policy, window layout), per-slide presenter state, audio readiness and current driving-motion summary.",
       "destructive": false,
       "domain": "digital_human",
       "id": "digital_human.config.get",
@@ -3678,6 +3678,171 @@
       "mcp_tool": "ppt_digital_human_config_get",
       "method": "GET",
       "output_schema": {
+        "$defs": {
+          "DigitalHumanCircle": {
+            "description": "Presenter window circle: page position and relative size.",
+            "properties": {
+              "cx": {
+                "default": 0.85,
+                "description": "窗口圆心横向位置（0-1 页面比例）",
+                "title": "Cx",
+                "type": "number"
+              },
+              "cy": {
+                "default": 0.76,
+                "description": "窗口圆心纵向位置（0-1 页面比例）",
+                "title": "Cy",
+                "type": "number"
+              },
+              "r": {
+                "default": 0.12,
+                "description": "窗口半径（相对页面宽度）",
+                "title": "R",
+                "type": "number"
+              }
+            },
+            "title": "DigitalHumanCircle",
+            "type": "object"
+          },
+          "DigitalHumanConfigView": {
+            "additionalProperties": true,
+            "description": "Effective normalized digital-human configuration as stored.",
+            "properties": {
+              "avatar_id": {
+                "default": "",
+                "title": "Avatar Id",
+                "type": "string"
+              },
+              "border": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Border"
+              },
+              "circle": {
+                "$ref": "#/$defs/DigitalHumanCircle"
+              },
+              "enabled": {
+                "default": false,
+                "title": "Enabled",
+                "type": "boolean"
+              },
+              "mode": {
+                "default": "portrait",
+                "title": "Mode",
+                "type": "string"
+              },
+              "motion_source": {
+                "default": "default",
+                "title": "Motion Source",
+                "type": "string"
+              },
+              "position": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Position"
+              },
+              "shape": {
+                "default": "circle",
+                "title": "Shape",
+                "type": "string"
+              },
+              "sync_mode": {
+                "default": "accurate",
+                "title": "Sync Mode",
+                "type": "string"
+              },
+              "upload_short_video_policy": {
+                "default": "reject",
+                "title": "Upload Short Video Policy",
+                "type": "string"
+              },
+              "upload_start_sec": {
+                "default": 0.0,
+                "title": "Upload Start Sec",
+                "type": "number"
+              },
+              "video": {
+                "$ref": "#/$defs/DigitalHumanVideoLayout"
+              }
+            },
+            "title": "DigitalHumanConfigView",
+            "type": "object"
+          },
+          "DigitalHumanMotionSummary": {
+            "description": "Current driving-motion source state.",
+            "properties": {
+              "exists": {
+                "default": false,
+                "description": "动作视频是否存在且可解码",
+                "title": "Exists",
+                "type": "boolean"
+              },
+              "metadata": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "解码后的视频元数据（宽/高/时长），不存在时为 null",
+                "title": "Metadata"
+              },
+              "source": {
+                "default": "default",
+                "description": "default | custom",
+                "title": "Source",
+                "type": "string"
+              }
+            },
+            "title": "DigitalHumanMotionSummary",
+            "type": "object"
+          },
+          "DigitalHumanVideoLayout": {
+            "description": "Presenter video placement inside the window.",
+            "properties": {
+              "ox": {
+                "default": 0.5,
+                "description": "视频横向偏移",
+                "title": "Ox",
+                "type": "number"
+              },
+              "oy": {
+                "default": 0.5,
+                "description": "视频纵向偏移",
+                "title": "Oy",
+                "type": "number"
+              },
+              "zoom": {
+                "default": 1.0,
+                "description": "视频缩放",
+                "title": "Zoom",
+                "type": "number"
+              }
+            },
+            "title": "DigitalHumanVideoLayout",
+            "type": "object"
+          }
+        },
         "properties": {
           "audio_ready": {
             "additionalProperties": {
@@ -3692,14 +3857,10 @@
             "type": "integer"
           },
           "config": {
-            "additionalProperties": true,
-            "title": "Config",
-            "type": "object"
+            "$ref": "#/$defs/DigitalHumanConfigView"
           },
           "motion": {
-            "additionalProperties": true,
-            "title": "Motion",
-            "type": "object"
+            "$ref": "#/$defs/DigitalHumanMotionSummary"
           },
           "slides": {
             "additionalProperties": {
@@ -3728,10 +3889,10 @@
       ],
       "response_kind": "json",
       "status": "stable",
-      "version": "1.2"
+      "version": "1.3"
     },
     {
-      "behavior_version": "4",
+      "behavior_version": "5",
       "bindings": {
         "config": "body",
         "project_id": "path"
@@ -3741,8 +3902,8 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "944e03e96ee1cbfd7c886552",
-      "description": "Update digital-human configuration for a project.",
+      "contract_revision": "4adfd54e08010616061f2444",
+      "description": "Update the digital-human configuration patch (only supplied fields change): enabled, mode (portrait/upload/comfyui/generate), motion_source (default/custom), upload_start_sec, upload_short_video_policy (reject/loop), avatar_id, sync_mode and window layout. Business validation errors are returned as typed Agent errors.",
       "destructive": false,
       "domain": "digital_human",
       "id": "digital_human.config.update",
@@ -3751,13 +3912,253 @@
         "supported": false
       },
       "input_schema": {
+        "$defs": {
+          "DigitalHumanCircle": {
+            "description": "Presenter window circle: page position and relative size.",
+            "properties": {
+              "cx": {
+                "default": 0.85,
+                "description": "窗口圆心横向位置（0-1 页面比例）",
+                "title": "Cx",
+                "type": "number"
+              },
+              "cy": {
+                "default": 0.76,
+                "description": "窗口圆心纵向位置（0-1 页面比例）",
+                "title": "Cy",
+                "type": "number"
+              },
+              "r": {
+                "default": 0.12,
+                "description": "窗口半径（相对页面宽度）",
+                "title": "R",
+                "type": "number"
+              }
+            },
+            "title": "DigitalHumanCircle",
+            "type": "object"
+          },
+          "DigitalHumanConfigPatch": {
+            "additionalProperties": false,
+            "description": "Partial digital-human configuration patch (only supplied fields change).\n\nThe service remains the source of truth for normalization and business\nvalidation; this schema makes the accepted fields, defaults and enum values\ndiscoverable before an Agent calls the capability.",
+            "properties": {
+              "avatar_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "项目已上传并通过校验的讲师形象 ID",
+                "title": "Avatar Id"
+              },
+              "border": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "讲师窗口描边（可选，默认 width=2 color=#FFFFFF）",
+                "title": "Border"
+              },
+              "circle": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/DigitalHumanCircle"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "圆形/矩形窗口位置与大小"
+              },
+              "enabled": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "是否启用数字人讲解；短视频/成品视频模式下同样需要开启才会合成",
+                "title": "Enabled"
+              },
+              "mode": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/DigitalHumanMode"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "portrait=照片+动作视频（默认）；upload=直传成品视频；comfyui/generate 为旧模式兼容"
+              },
+              "motion_source": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/DigitalHumanMotionSource"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "动作来源：default=平台内置模板，custom=项目上传的动作视频"
+              },
+              "position": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "讲师窗口位置覆盖（可选）",
+                "title": "Position"
+              },
+              "shape": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "窗口形状 circle | rect；非法值由服务端归一为 circle（与 Web 一致）",
+                "title": "Shape"
+              },
+              "sync_mode": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "口型同步模式（例如 accurate）",
+                "title": "Sync Mode"
+              },
+              "upload_short_video_policy": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/DigitalHumanShortVideoPolicy"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "upload 模式视频短于旁白时：reject=拒绝（默认），loop=循环"
+              },
+              "upload_start_sec": {
+                "anyOf": [
+                  {
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "upload 模式从成品视频的第几秒开始取画面（默认 0）",
+                "title": "Upload Start Sec"
+              },
+              "video": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/DigitalHumanVideoLayout"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "窗口内视频的偏移与缩放"
+              }
+            },
+            "title": "DigitalHumanConfigPatch",
+            "type": "object"
+          },
+          "DigitalHumanMode": {
+            "description": "Supported presenter modes (single source for Web and Agent schema).",
+            "enum": [
+              "portrait",
+              "comfyui",
+              "upload",
+              "generate"
+            ],
+            "title": "DigitalHumanMode",
+            "type": "string"
+          },
+          "DigitalHumanMotionSource": {
+            "enum": [
+              "default",
+              "custom"
+            ],
+            "title": "DigitalHumanMotionSource",
+            "type": "string"
+          },
+          "DigitalHumanShortVideoPolicy": {
+            "enum": [
+              "reject",
+              "loop"
+            ],
+            "title": "DigitalHumanShortVideoPolicy",
+            "type": "string"
+          },
+          "DigitalHumanVideoLayout": {
+            "description": "Presenter video placement inside the window.",
+            "properties": {
+              "ox": {
+                "default": 0.5,
+                "description": "视频横向偏移",
+                "title": "Ox",
+                "type": "number"
+              },
+              "oy": {
+                "default": 0.5,
+                "description": "视频纵向偏移",
+                "title": "Oy",
+                "type": "number"
+              },
+              "zoom": {
+                "default": 1.0,
+                "description": "视频缩放",
+                "title": "Zoom",
+                "type": "number"
+              }
+            },
+            "title": "DigitalHumanVideoLayout",
+            "type": "object"
+          }
+        },
         "additionalProperties": false,
         "description": "Validated Agent transport envelope for the project digital-human config.",
         "properties": {
           "config": {
-            "additionalProperties": true,
-            "description": "Digital-human configuration patch. Only supported fields are persisted.",
-            "type": "object"
+            "$ref": "#/$defs/DigitalHumanConfigPatch",
+            "description": "数字人配置补丁；只提交需要修改的字段，未提交字段保持原值"
           },
           "project_id": {
             "description": "The project ID.",
@@ -3777,6 +4178,171 @@
       "mcp_tool": "ppt_digital_human_config_update",
       "method": "PATCH",
       "output_schema": {
+        "$defs": {
+          "DigitalHumanCircle": {
+            "description": "Presenter window circle: page position and relative size.",
+            "properties": {
+              "cx": {
+                "default": 0.85,
+                "description": "窗口圆心横向位置（0-1 页面比例）",
+                "title": "Cx",
+                "type": "number"
+              },
+              "cy": {
+                "default": 0.76,
+                "description": "窗口圆心纵向位置（0-1 页面比例）",
+                "title": "Cy",
+                "type": "number"
+              },
+              "r": {
+                "default": 0.12,
+                "description": "窗口半径（相对页面宽度）",
+                "title": "R",
+                "type": "number"
+              }
+            },
+            "title": "DigitalHumanCircle",
+            "type": "object"
+          },
+          "DigitalHumanConfigView": {
+            "additionalProperties": true,
+            "description": "Effective normalized digital-human configuration as stored.",
+            "properties": {
+              "avatar_id": {
+                "default": "",
+                "title": "Avatar Id",
+                "type": "string"
+              },
+              "border": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Border"
+              },
+              "circle": {
+                "$ref": "#/$defs/DigitalHumanCircle"
+              },
+              "enabled": {
+                "default": false,
+                "title": "Enabled",
+                "type": "boolean"
+              },
+              "mode": {
+                "default": "portrait",
+                "title": "Mode",
+                "type": "string"
+              },
+              "motion_source": {
+                "default": "default",
+                "title": "Motion Source",
+                "type": "string"
+              },
+              "position": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Position"
+              },
+              "shape": {
+                "default": "circle",
+                "title": "Shape",
+                "type": "string"
+              },
+              "sync_mode": {
+                "default": "accurate",
+                "title": "Sync Mode",
+                "type": "string"
+              },
+              "upload_short_video_policy": {
+                "default": "reject",
+                "title": "Upload Short Video Policy",
+                "type": "string"
+              },
+              "upload_start_sec": {
+                "default": 0.0,
+                "title": "Upload Start Sec",
+                "type": "number"
+              },
+              "video": {
+                "$ref": "#/$defs/DigitalHumanVideoLayout"
+              }
+            },
+            "title": "DigitalHumanConfigView",
+            "type": "object"
+          },
+          "DigitalHumanMotionSummary": {
+            "description": "Current driving-motion source state.",
+            "properties": {
+              "exists": {
+                "default": false,
+                "description": "动作视频是否存在且可解码",
+                "title": "Exists",
+                "type": "boolean"
+              },
+              "metadata": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "解码后的视频元数据（宽/高/时长），不存在时为 null",
+                "title": "Metadata"
+              },
+              "source": {
+                "default": "default",
+                "description": "default | custom",
+                "title": "Source",
+                "type": "string"
+              }
+            },
+            "title": "DigitalHumanMotionSummary",
+            "type": "object"
+          },
+          "DigitalHumanVideoLayout": {
+            "description": "Presenter video placement inside the window.",
+            "properties": {
+              "ox": {
+                "default": 0.5,
+                "description": "视频横向偏移",
+                "title": "Ox",
+                "type": "number"
+              },
+              "oy": {
+                "default": 0.5,
+                "description": "视频纵向偏移",
+                "title": "Oy",
+                "type": "number"
+              },
+              "zoom": {
+                "default": 1.0,
+                "description": "视频缩放",
+                "title": "Zoom",
+                "type": "number"
+              }
+            },
+            "title": "DigitalHumanVideoLayout",
+            "type": "object"
+          }
+        },
         "properties": {
           "audio_ready": {
             "additionalProperties": {
@@ -3791,14 +4357,10 @@
             "type": "integer"
           },
           "config": {
-            "additionalProperties": true,
-            "title": "Config",
-            "type": "object"
+            "$ref": "#/$defs/DigitalHumanConfigView"
           },
           "motion": {
-            "additionalProperties": true,
-            "title": "Motion",
-            "type": "object"
+            "$ref": "#/$defs/DigitalHumanMotionSummary"
           },
           "slides": {
             "additionalProperties": {
@@ -3827,10 +4389,10 @@
       ],
       "response_kind": "json",
       "status": "stable",
-      "version": "1.2"
+      "version": "1.3"
     },
     {
-      "behavior_version": "4",
+      "behavior_version": "5",
       "bindings": {
         "project_id": "path"
       },
@@ -3839,8 +4401,8 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "ee8da63ab67e8f6c009c34a8",
-      "description": "Check digital-human service availability and model readiness.",
+      "contract_revision": "006a1c3ec75d2808abece4f2",
+      "description": "Check digital-human service availability and model readiness, including portrait (LivePortrait + MuseTalk) readiness and default motion template availability.",
       "destructive": false,
       "domain": "digital_human",
       "id": "digital_human.health",
@@ -3868,7 +4430,54 @@
       "mcp_tool": "ppt_digital_human_health",
       "method": "GET",
       "output_schema": {
-        "additionalProperties": true,
+        "description": "Digital-human service health, including the portrait pipeline readiness.",
+        "properties": {
+          "available": {
+            "default": true,
+            "title": "Available",
+            "type": "boolean"
+          },
+          "comfyui_online": {
+            "default": false,
+            "title": "Comfyui Online",
+            "type": "boolean"
+          },
+          "default_motion_available": {
+            "default": false,
+            "description": "平台默认动作模板是否存在",
+            "title": "Default Motion Available",
+            "type": "boolean"
+          },
+          "error": {
+            "default": "",
+            "description": "服务不可用时的错误文本",
+            "title": "Error",
+            "type": "string"
+          },
+          "health": {
+            "additionalProperties": true,
+            "description": "数字人服务返回的原始健康载荷",
+            "title": "Health",
+            "type": "object"
+          },
+          "inference_backend": {
+            "default": "",
+            "title": "Inference Backend",
+            "type": "string"
+          },
+          "model_ready": {
+            "default": false,
+            "description": "任一已配置生成后端是否就绪",
+            "title": "Model Ready",
+            "type": "boolean"
+          },
+          "portrait_model_ready": {
+            "default": false,
+            "description": "LivePortrait + MuseTalk 照片动作迁移环境是否就绪",
+            "title": "Portrait Model Ready",
+            "type": "boolean"
+          }
+        },
         "type": "object"
       },
       "path": "/api/agent/v1/projects/{project_id}/digital-human/health",
@@ -3877,10 +4486,10 @@
       ],
       "response_kind": "json",
       "status": "stable",
-      "version": "1.1"
+      "version": "1.2"
     },
     {
-      "behavior_version": "5",
+      "behavior_version": "6",
       "bindings": {
         "project_id": "path"
       },
@@ -3889,8 +4498,8 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "4e2e7e176ee81826c49a6442",
-      "description": "Submit one full-course presenter job using the selected avatar and current exported audio; returns job_id/status and propagates actual failures.",
+      "contract_revision": "79e53ea5db363fe3f81e6486",
+      "description": "Submit one full-course presenter job using the selected avatar, the current exported full audio and the configured mode (portrait uses the driving motion source; upload mode rejects generation). Returns job_id/status and propagates actual failures.",
       "destructive": false,
       "domain": "digital_human",
       "id": "digital_human.generate",
@@ -3927,7 +4536,7 @@
       ],
       "response_kind": "json",
       "status": "stable",
-      "version": "2.0"
+      "version": "2.1"
     },
     {
       "behavior_version": "4",
@@ -13596,7 +14205,7 @@
       "version": "1.0"
     },
     {
-      "behavior_version": "1",
+      "behavior_version": "2",
       "bindings": {
         "project_id": "path"
       },
@@ -13605,8 +14214,8 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "358acb2494f99e1e7038d1e5",
-      "description": "Upload the project's custom driving video for photo motion transfer; identical bytes are a no-op.",
+      "contract_revision": "9a575bc9bc10af4c4a6e19f1",
+      "description": "Upload the project's custom driving video for portrait motion transfer (multipart/form-data; identical bytes are a no-op). HTTP/SDK file transport only: not invocable through MCP.",
       "destructive": false,
       "domain": "digital_human",
       "id": "digital_human.motion.upload",
@@ -13643,10 +14252,10 @@
       ],
       "response_kind": "file_upload",
       "status": "stable",
-      "version": "1.0"
+      "version": "1.1"
     },
     {
-      "behavior_version": "2",
+      "behavior_version": "3",
       "bindings": {
         "payload": "body",
         "project_id": "path",
@@ -13657,8 +14266,8 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "67ba85ce4a2bd7658a78782d",
-      "description": "Generate the digital-human presenter video for one slide (ComfyUI/Minimax backend per configuration).",
+      "contract_revision": "9605aaac5501e578f783bdfd",
+      "description": "Generate the digital-human presenter video for one slide. portrait mode requires the selected photo, an available driving motion source and confirmed course audio; upload mode rejects generation (use digital_human.video.upload); legacy comfyui/generate follow the configured backend. Long-running.",
       "destructive": false,
       "domain": "digital_human",
       "id": "digital_human.slide.generate",
@@ -13715,10 +14324,10 @@
       ],
       "response_kind": "json",
       "status": "stable",
-      "version": "1.0"
+      "version": "1.1"
     },
     {
-      "behavior_version": "4",
+      "behavior_version": "5",
       "bindings": {
         "job_id": "path",
         "project_id": "path"
@@ -13728,8 +14337,8 @@
         "expected_revision_supported": false,
         "resource_scope": null
       },
-      "contract_revision": "05d31d63f52713775813c983",
-      "description": "Read one digital-human generation job by id.",
+      "contract_revision": "9bdc9b6b3ce3b3142436a971",
+      "description": "Read one digital-human generation job by id. waiting_external, publishing and submission_unknown are non-terminal; stale marks a result built from changed photo, motion or audio sources.",
       "destructive": false,
       "domain": "digital_human",
       "id": "digital_human.jobs.get",
@@ -13772,7 +14381,7 @@
       ],
       "response_kind": "json",
       "status": "stable",
-      "version": "1.2"
+      "version": "1.3"
     },
     {
       "behavior_version": "1",
@@ -18313,5 +18922,5 @@
       "version": "1.0"
     }
   ],
-  "contract_hash": "eb5692f9afefadfb"
+  "contract_hash": "9cb4a9129233a89f"
 }

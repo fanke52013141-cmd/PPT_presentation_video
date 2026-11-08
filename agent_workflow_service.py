@@ -28,12 +28,15 @@ VISIBLE_STAGES = (
 def inspect_project_state(project: Any, *, annotation: dict, digital_human_enabled: bool,
                           render_submission: dict, active_jobs: list[str], authorized_capabilities: set[str]) -> dict:
     """No transitions, repairs, generation, commits or persistence on reads."""
+    from digital_human_source_service import presenter_readiness
+
     root = project.run_dir
     identities = slide_ids(project)
     for identity in identities:
         safe_identifier(identity, label="slide_id")
     statuses = project.get_step_status()
     mask_enabled = getattr(project, "presentation_mode", "full_frame") == "reveal"
+    presenter = presenter_readiness(root)
     stages = []
     for number, (identity, internal, validators) in enumerate(VISIBLE_STAGES, 1):
         skipped = (identity == "mask" and not mask_enabled) or (identity == "digital_human" and not digital_human_enabled)
@@ -45,6 +48,14 @@ def inspect_project_state(project: Any, *, annotation: dict, digital_human_enabl
         if identity == "annotations":
             stage["module_state"] = annotation["module_state"]
             stage["skipped"] = annotation["module_state"] == "no_annotations"
+        if identity == "digital_human":
+            # Presenter freshness is source-owned and must not be duplicated by
+            # the Agent layer: expose the same readiness used by render gates.
+            stage["checks"] = dict(presenter["checks"]) if not skipped else {}
+            if skipped:
+                stage["module_state"] = "disabled"
+            else:
+                stage["module_state"] = "ready" if presenter["ready"] else "blocked"
         stages.append(stage)
     versions = {}
     for relative in (
@@ -76,6 +87,7 @@ def inspect_project_state(project: Any, *, annotation: dict, digital_human_enabl
                for item in list_impacts(root)]
     result = {"project_id": project.id, "revision": revision, "resource_versions": versions,
               "stages": stages, "render_submission": {**render_submission, "annotation_readiness": annotation["readiness"],
+                                                       "presenter_readiness": presenter,
                                                        "active_jobs": active_jobs},
               "pending_impacts": impacts, "allowed_actions": [action for action in actions if action["capability_id"] in authorized_capabilities]}
     result = ProjectStateResult(observation_revision="", **result).model_dump()

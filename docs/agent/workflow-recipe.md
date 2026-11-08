@@ -36,7 +36,7 @@ POST /api/agent/v1/invoke
 | 6. Step 4 Mask | `mask.annotate` → `mask.result.get` → `mask.draft.update`/`mask.result.update` | 仅 reveal 演示模式项目需要；能力清单见 feature-coverage |
 | 7. Step 5 音频 | `tts.synthesize` → 轮询 `operation.get` → `tts.audio.confirm` | **持久异步任务**（见下节）；确认门禁通过后才能渲染 |
 | 8. Step 6 标注 | `annotation.summary.get` → `annotation.settings.update` → `annotation.jobs.submit` → `annotation.jobs.get` → `annotation.slide.patch` | 结构化补丁用 `payload` 信封 |
-| 9. Step 7 数字人（可选） | `digital_human.config.update` → `digital_human.generate` / `digital_human.slide.generate` | 需外部 Worker 服务在线（`digital_human.health`） |
+| 9. Step 7 数字人（可选） | `digital_human.config.update` →（可选 HTTP/CLI 上传动作视频）→ `digital_human.generate` / `digital_human.slide.generate` | portrait 模式需先上传动作视频或使用平台默认模板；upload 模式用 `digital_human.video.upload`；`project.state.render_submission.presenter_readiness` 显示讲师素材是否就绪 |
 | 10. Step 8 输出 | `video.render` 或 `pptx.export.create` → 轮询 → `artifact.get` / 专用下载 | 两者都是持久任务；产物用精确 ID URI `ppt://projects/{id}/artifacts/{artifact_id}` |
 
 ## 二、异步任务：提交 → 轮询 → 终态

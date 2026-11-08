@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 from database import get_db, Project
 from scripts.media_tools import probe_video_metadata
 from artifact_fingerprint import sha256_bytes, sha256_file
-from pipeline_lifecycle import project_artifact_lock, read_json_file, write_json_atomic
+from pipeline_lifecycle import project_artifact_lock, write_json_atomic
 from project_impact_service import resolve_impacts, snapshot_impacts
 
 REPO_ROOT = Path(__file__).resolve().parent
@@ -40,7 +40,15 @@ router = APIRouter()
 
 DIGI_DIRNAME = "digital_human"
 CONFIG_FILENAME = "digital_human.json"
-from digital_human_contracts import DEFAULT_CIRCLE, digital_human_render_config
+from digital_human_contracts import (
+    DEFAULT_CIRCLE,
+    DIGITAL_HUMAN_MODES,
+    MOTION_SOURCES,
+    SHORT_VIDEO_POLICIES,
+    default_config,
+    digital_human_render_config,
+    load_config,
+)
 from digital_human_source_service import (
     generation_source_fingerprint, motion_path, motion_summary,
     presenter_source_stale, presenter_audio_stale, published_audio_hash, save_motion_video,
@@ -147,38 +155,11 @@ def _config_path(project: Project) -> Path:
 
 
 def _default_config() -> Dict[str, Any]:
-    return {
-        "enabled": False,
-        "mode": "portrait",  # 照片 + 动作视频 | upload 成品视频
-        "motion_source": "default",
-        "upload_start_sec": 0.0,
-        "upload_short_video_policy": "reject",
-        "shape": "circle",  # 窗口形状 'circle' | 'rect'
-        "avatar_id": "",
-        "sync_mode": "accurate",
-        "circle": dict(DEFAULT_CIRCLE),  # 框在页面位置(cx,cy) + 大小(r)
-        "video": {"ox": 0.5, "oy": 0.5, "zoom": 1.0},  # 视频与框相对位置
-        "position": None,
-        "border": {"width": 2, "color": "#FFFFFF"},
-        "slides": {},
-    }
+    return default_config()
 
 
 def _load_config(project: Project) -> Dict[str, Any]:
-    raw = read_json_file(_config_path(project))
-    if not isinstance(raw, dict):
-        raw = {}
-    cfg = _default_config()
-    cfg.update({k: v for k, v in raw.items() if k in cfg})
-    if not isinstance(cfg["circle"], dict):
-        cfg["circle"] = dict(DEFAULT_CIRCLE)
-    if not isinstance(cfg.get("video"), dict):
-        cfg["video"] = {"ox": 0.5, "oy": 0.5, "zoom": 1.0}
-    if cfg.get("shape") not in ("circle", "rect"):
-        cfg["shape"] = "circle"
-    if cfg.get("mode") not in ("portrait", "comfyui", "upload", "generate"):
-        cfg["mode"] = "portrait"
-    return cfg
+    return load_config(project.run_dir)
 
 
 def _save_config(project: Project, cfg: Dict[str, Any]) -> None:
@@ -209,11 +190,11 @@ def update_digital_human_config(project: Project, payload: Dict[str, Any]) -> Di
     """
     previous = _load_config(project)
     cfg = _load_config(project)
-    if "mode" in payload and payload["mode"] not in ("portrait", "comfyui", "upload", "generate"):
+    if "mode" in payload and payload["mode"] not in DIGITAL_HUMAN_MODES:
         raise HTTPException(status_code=400, detail="不支持的数字人模式")
-    if "motion_source" in payload and payload["motion_source"] not in ("default", "custom"):
+    if "motion_source" in payload and payload["motion_source"] not in MOTION_SOURCES:
         raise HTTPException(status_code=400, detail="动作来源必须为 default 或 custom")
-    if "upload_short_video_policy" in payload and payload["upload_short_video_policy"] not in ("reject", "loop"):
+    if "upload_short_video_policy" in payload and payload["upload_short_video_policy"] not in SHORT_VIDEO_POLICIES:
         raise HTTPException(status_code=400, detail="短视频处理必须为 reject 或 loop")
     if "upload_start_sec" in payload:
         import math

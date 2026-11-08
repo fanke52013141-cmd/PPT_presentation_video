@@ -67,16 +67,19 @@ def agent_video_render(
         services = get_project_pipeline_services(db, project_id)
         result = services.render_video()
     except VideoRenderError as exc:
-        # 前置门禁（音频未确认/配置变更等）不是服务器故障：409 + 可操作码，
-        # 客户端按 repair_actions 回到旁白与音频步骤（真实供应商演练
-        # 2026-10-24 P2：此前被包装成 OPERATION_FAILED 500）。
+        # 前置门禁（音频未确认/配置变更/讲师素材未就绪等）不是服务器故障：
+        # 409 + 可操作码，客户端按 repair_actions 回到对应步骤。
         finalize_claim_failure(claim, exc)
         from agent_api.errors import AgentAPIError
 
         raise AgentAPIError(
             "RENDER_PRECONDITION_FAILED", str(exc.detail), 409,
-            details={"code": "RENDER_PRECONDITION_FAILED",
-                     "repair_actions": [{"action": "confirm_audio_before_render"}]},
+            details={
+                "code": "RENDER_PRECONDITION_FAILED",
+                "repair_actions": exc.repair_actions or [
+                    {"action": "confirm_audio_before_render"},
+                ],
+            },
         ) from exc
     except Exception as e:
         finalize_claim_failure(claim, e)

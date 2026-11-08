@@ -208,6 +208,43 @@ class VideoRenderService:
                 400,
                 "请先在“旁白与音频”步骤试听并确认音频，再开始视频渲染。",
             )
+        self._validate_presenter_readiness(project)
+
+    @staticmethod
+    def _presenter_blocking_message(readiness: dict[str, Any]) -> str:
+        """Map machine-readable presenter issues to one actionable message."""
+        messages = {
+            "motion_missing": "照片动作迁移缺少动作视频：请在第 7 步上传自定义动作视频，或安装平台默认动作模板。",
+            "upload_video_missing": "已启用数字人讲解，但未找到上传的成品视频；请返回第 7 步重新上传后再生成。",
+            "presenter_video_missing": "已启用数字人讲解，但讲师视频尚未生成；请先在第 7 步生成讲师视频后再渲染。",
+            "presenter_source_stale": "讲师照片或动作视频已变化，请返回第 7 步重新生成讲师视频后再渲染。",
+            "presenter_audio_stale": "课程旁白音频已变化，请返回第 7 步重新生成讲师视频后再渲染。",
+        }
+        issues = list(readiness.get("issues") or [])
+        return messages.get(issues[0], "数字人讲师素材未就绪，请返回第 7 步检查后再渲染。")
+
+    def _validate_presenter_readiness(self, project: Project) -> None:
+        """Reject an enabled-but-stale presenter before Remotion runs.
+
+        Digital human stays optional: a disabled presenter never blocks render.
+        When it is enabled, the same source/audio freshness rules that the
+        composition stage enforces are checked here first, so both the Web UI
+        and Agent submission paths fail early with a recoverable message instead
+        of losing the rendered base video afterwards.
+        """
+        from digital_human_source_service import presenter_readiness
+
+        readiness = presenter_readiness(project.run_dir)
+        if readiness.get("enabled") and not readiness.get("ready"):
+            raise VideoRenderError(
+                409,
+                self._presenter_blocking_message(readiness),
+                repair_actions=[
+                    {"action": "inspect_presenter_readiness", "capability_id": "digital_human.config.get"},
+                    {"action": "regenerate_presenter", "capability_id": "digital_human.generate"},
+                ],
+            )
+
     def inspect_submission(self, project: Project) -> dict[str, Any]:
         try:
             self.validate_submission(project)

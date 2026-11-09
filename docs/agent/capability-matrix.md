@@ -1,8 +1,8 @@
 # Agent Capability Matrix
 
-- **Agent API Version**: 3.3.0
-- **Contract Hash**: `9cb4a9129233a89f`
-- **Total Capabilities**: 275
+- **Agent API Version**: 3.4.0
+- **Contract Hash**: `e9cdfe8908008bff`
+- **Total Capabilities**: 276
 
 This document is auto-generated from `agent_contract/capabilities.py`.
 Do not edit manually — run `python scripts/generate_agent_contracts.py`.
@@ -177,6 +177,7 @@ Do not edit manually — run `python scripts/generate_agent_contracts.py`.
 | `mask.result.update` | 1.1 | stable | PUT | `/api/agent/v1/projects/{project_id}/mask` | `ppt_mask_result_update` | Yes | `mask save` | `mask_manifest_service.update_step5_result` | No | No |
 | `mask.preview.build` | 1.0 | stable | POST | `/api/agent/v1/projects/{project_id}/mask/previews/{slide_id}` | `ppt_mask_preview_build` | Yes | `mask preview-build` | `mask_preview_service.build_step5_mask_preview` | No | No |
 | `mask.preview.get` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/mask/previews/{slide_id}/content` | `ppt_mask_preview_get` | No | `mask preview` | `mask_preview_service.get_step5_mask_preview_path` | No | No |
+| `mask.smart_selection` | 1.0 | stable | POST | `/api/agent/v1/projects/{project_id}/mask/slides/{slide_id}/smart-selection` | `ppt_mask_smart_selection` | Yes | `mask smart-select` | `ai_mask_segmentation_backend.run_smart_selection` | No | No |
 | `annotation.summary.get` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/annotations` | `ppt_annotation_summary_get` | Yes | `annotation summary` | `annotation_service.AnnotationService.get_summary` | No | No |
 | `annotation.settings.update` | 1.0 | stable | PUT | `/api/agent/v1/projects/{project_id}/annotations/settings` | `ppt_annotation_settings_update` | Yes | `annotation settings --set` | `annotation_service.AnnotationService.update_settings` | No | No |
 | `annotation.slide.get` | 1.0 | stable | GET | `/api/agent/v1/projects/{project_id}/annotations/slides/{slide_id}` | `ppt_annotation_slide_get` | Yes | `annotation slide` | `annotation_service.AnnotationService.get_slide` | No | No |
@@ -300,7 +301,7 @@ Do not edit manually — run `python scripts/generate_agent_contracts.py`.
 
 ## MCP Tool Summary
 
-The registry contributes **230** stable capability tools, plus the fixed search/describe/invoke discovery tools:
+The registry contributes **231** stable capability tools, plus the fixed search/describe/invoke discovery tools:
 
 - `ppt_project_state` — Observe eight visible steps, saved internal statuses, source-owned artifact checks, resource hashes, annotation decision, optional presenter readiness (motion/presenter/audio issues), render blocking reasons, pending impacts and authorized candidate actions. Read-only; not a render-success guarantee or a global concurrency lock. Actions marked requires_input need additional schema-valid input.
 - `ppt_operation_get` — Read an exact durable job or pipeline run by operation_id; never substitute latest.
@@ -443,6 +444,7 @@ The registry contributes **230** stable capability tools, plus the fixed search/
 - `ppt_mask_draft_update` — Save the Step 5 draft workspace state; a content change registers the mask impact and commits.
 - `ppt_mask_result_update` — Save the final Step 5 manifest; with build_assets=true exact reveal assets are rebuilt before any render.
 - `ppt_mask_preview_build` — Build the exact single-slide mask preview and its report.
+- `ppt_mask_smart_selection` — Generate an exact single-object mask from positive/negative point prompts via the SAM2 backend; the route returns 503 when no segmentation backend is available.
 - `ppt_annotation_summary_get` — Read the project annotation summary: enable decision, per-slide revision and confirm state.
 - `ppt_annotation_settings_update` — Update annotation settings including the enable/skip decision; commits with one database write.
 - `ppt_annotation_slide_get` — Read one slide's structured annotation state and revision.

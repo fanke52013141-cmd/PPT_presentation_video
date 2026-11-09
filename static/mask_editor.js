@@ -274,6 +274,10 @@ function updateMaskToolCursor(event) {
 }
 
 function beginMaskStroke(event, canvas) {
+  if (state.canvasState.smartSelect.active) {
+    handleSmartPoint(event, canvas);
+    return;
+  }
   if (!state.canvasState.paintMode || state.canvasState.paintingBoxIndex < 0) return;
   if (event.button !== undefined && event.button !== 0) return;
   event.preventDefault();
@@ -359,6 +363,9 @@ function initCanvasEvents() {
     if (!state.canvasState.isPainting) hideMaskToolCursor();
   });
   newCanvas.addEventListener('wheel', (e) => handleMaskCanvasWheel(e, newCanvas), { passive: false });
+  newCanvas.addEventListener('contextmenu', (event) => {
+    if (state.canvasState.smartSelect.active) event.preventDefault();
+  });
   if (wrapper) {
     wrapper.onwheel = (e) => handleMaskCanvasWheel(e, newCanvas);
   }
@@ -859,7 +866,7 @@ function redrawCanvas(options = {}) {
       drawManualMaskStrokes(ctx, item, idx, options);
     });
   }
-
+  renderSmartPoints(ctx);
 }
 
 function saveStep5CurrentState() {
@@ -1068,4 +1075,176 @@ window.PPTStudio = Object.assign(window.PPTStudio || {}, {
   getCurrentProject: () => state.currentProject,
   flushStep5Draft,
 });
+
+// ---------------------------------------------------------------------------
+// 智能选区（SAM2 点提示）：点击放置正/负点，生成精确 mask 写入当前语块
+// ---------------------------------------------------------------------------
+
+function smartSelectState() {
+  return state.canvasState.smartSelect;
+}
+
+function startSmartSelection(idx) {
+  const box = state.canvasState.boxes[idx];
+  if (!box) return;
+  state.canvasState.isPainting = false;
+  state.canvasState.paintMode = false;
+  state.canvasState.eraserMode = false;
+  state.canvasState.paintingBoxIndex = -1;
+  state.canvasState.smartSelect = {
+    active: true,
+    boxIndex: idx,
+    positive: [],
+    negative: [],
+    negativeMode: false,
+    loading: false,
+  };
+  selectStep5MaskBox(idx);
+  ensureSmartActionBar();
+  redrawCanvas();
+  Toast.show('点击画面放置正点，Alt/右键放负点，然后生成选区', 'info');
+}
+
+function cancelSmartSelection() {
+  const smart = smartSelectState();
+  smart.active = false;
+  smart.boxIndex = -1;
+  smart.positive = [];
+  smart.negative = [];
+  smart.negativeMode = false;
+  smart.loading = false;
+  removeSmartActionBar();
+  redrawCanvas();
+}
+
+function handleSmartPoint(event, canvas) {
+  event.preventDefault();
+  const smart = smartSelectState();
+  if (smart.loading) return;
+  const isNegative = event.button === 2 || event.altKey || smart.negativeMode;
+  const point = getCanvasCoords(event, canvas);
+  const rounded = { x: Math.round(point.x), y: Math.round(point.y) };
+  if (isNegative) smart.negative.push(rounded);
+  else smart.positive.push(rounded);
+  updateSmartActionBar();
+  redrawCanvas();
+}
+
+function clearSmartPoints() {
+  const smart = smartSelectState();
+  smart.positive = [];
+  smart.negative = [];
+  updateSmartActionBar();
+  redrawCanvas();
+}
+
+function toggleSmartNegative() {
+  const smart = smartSelectState();
+  smart.negativeMode = !smart.negativeMode;
+  updateSmartActionBar();
+}
+
+async function generateSmartSelection() {
+  const smart = smartSelectState();
+  if (!smart.positive.length) {
+    Toast.show('请至少放置一个正点', 'warning');
+    return;
+  }
+  const project = state.currentProject;
+  const slide = getCurrentManifestSlide();
+  if (!project?.id || !slide?.slide_id) {
+    Toast.show('当前项目或页面信息缺失', 'error');
+    return;
+  }
+  smart.loading = true;
+  updateSmartActionBar();
+  try {
+    const result = await API.post(
+      `/api/projects/${project.id}/steps/5/slides/${slide.slide_id}/smart-selection`,
+      { positive: smart.positive, negative: smart.negative }
+    );
+    const idx = smart.boxIndex;
+    const box = state.canvasState.boxes[idx];
+    if (box && result?.rle) {
+      ensureManualMask(box, idx).rle = result.rle;
+      updateMaskBoxFromManualMask(idx);
+      invalidateStep5ExactPreview();
+      cancelSmartSelection();
+      selectStep5MaskBox(idx);
+      scheduleStep5Autosave();
+      Toast.show(`智能选区完成，约 ${result.pixel_count} 像素`, 'success');
+    } else {
+      smart.loading = false;
+      updateSmartActionBar();
+      Toast.show('选区数据异常，请重试', 'error');
+    }
+  } catch (error) {
+    smart.loading = false;
+    updateSmartActionBar();
+    Toast.show(error?.message || '智能选区失败，请确认 GPU 机器 ComfyUI 已启动', 'error');
+  }
+}
+
+function renderSmartPoints(ctx) {
+  const smart = smartSelectState();
+  if (!smart.active) return;
+  const drawOne = (point, positive) => {
+    ctx.beginPath();
+    ctx.arc(point.x, point.y, 12, 0, Math.PI * 2);
+    ctx.fillStyle = positive ? 'rgba(255,255,255,0.92)' : 'rgba(40,40,40,0.92)';
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = positive ? '#e84a5f' : '#ffffff';
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(point.x - 6, point.y);
+    ctx.lineTo(point.x + 6, point.y);
+    ctx.moveTo(point.x, point.y - 6);
+    ctx.lineTo(point.x, point.y + 6);
+    ctx.stroke();
+  };
+  smart.positive.forEach(point => drawOne(point, true));
+  smart.negative.forEach(point => drawOne(point, false));
+}
+
+function ensureSmartActionBar() {
+  const bar = document.getElementById('step5-smart-bar');
+  if (bar) {
+    bar.hidden = false;
+    updateSmartActionBar();
+    if (bar.dataset.bound) return;
+    document.getElementById('step5-smart-negative')?.addEventListener('click', toggleSmartNegative);
+    document.getElementById('step5-smart-clear')?.addEventListener('click', clearSmartPoints);
+    document.getElementById('step5-smart-generate')?.addEventListener('click', generateSmartSelection);
+    document.getElementById('step5-smart-cancel')?.addEventListener('click', cancelSmartSelection);
+    bar.dataset.bound = '1';
+    return;
+  }
+  updateSmartActionBar();
+}
+
+function removeSmartActionBar() {
+  const bar = document.getElementById('step5-smart-bar');
+  if (bar) bar.hidden = true;
+}
+
+function updateSmartActionBar() {
+  const smart = smartSelectState();
+  const bar = document.getElementById('step5-smart-bar');
+  if (!bar) return;
+  const count = document.getElementById('step5-smart-count');
+  if (count) count.textContent = `正点 ${smart.positive.length} · 负点 ${smart.negative.length}`;
+  const negativeButton = document.getElementById('step5-smart-negative');
+  if (negativeButton) negativeButton.classList.toggle('active', smart.negativeMode);
+  const generateButton = document.getElementById('step5-smart-generate');
+  if (generateButton) {
+    generateButton.disabled = smart.loading;
+    generateButton.textContent = smart.loading ? '生成中…' : '生成选区';
+  }
+  [negativeButton, document.getElementById('step5-smart-clear'), document.getElementById('step5-smart-cancel')]
+    .forEach(button => { if (button) button.disabled = smart.loading; });
+}
+
+window.startSmartSelection = startSmartSelection;
+window.cancelSmartSelection = cancelSmartSelection;
 

@@ -77,7 +77,15 @@ function createWorkflowState() {
       exactPreviewImage: null,
       exactPreviewSlideId: '',
       startX: 0,
-      startY: 0
+      startY: 0,
+      smartSelect: {
+        active: false,
+        boxIndex: -1,
+        positive: [],
+        negative: [],
+        negativeMode: false,
+        loading: false
+      }
     }
   };
 }

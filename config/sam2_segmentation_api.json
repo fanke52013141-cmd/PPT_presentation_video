@@ -1,0 +1,41 @@
+{
+  "1": {
+    "class_type": "DownloadAndLoadSAM2Model",
+    "inputs": {
+      "model": "sam2.1_hiera_large.safetensors",
+      "segmentor": "single_image",
+      "device": "cuda",
+      "precision": "fp16"
+    }
+  },
+  "2": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "placeholder.png"
+    }
+  },
+  "3": {
+    "class_type": "Sam2Segmentation",
+    "inputs": {
+      "sam2_model": ["1", 0],
+      "image": ["2", 0],
+      "keep_model_loaded": true,
+      "coordinates_positive": "[]",
+      "coordinates_negative": "[]",
+      "individual_objects": false
+    }
+  },
+  "4": {
+    "class_type": "Mask To Image",
+    "inputs": {
+      "mask": ["3", 0]
+    }
+  },
+  "5": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": ["4", 0],
+      "filename_prefix": "ppt_sam2"
+    }
+  }
+}

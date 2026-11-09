@@ -1,5 +1,5 @@
 {
-  "agent_api_version": "3.3.0",
+  "agent_api_version": "3.4.0",
   "capabilities": [
     {
       "behavior_version": "3",
@@ -13087,6 +13087,102 @@
     {
       "behavior_version": "1",
       "bindings": {
+        "negative": "body",
+        "positive": "body",
+        "project_id": "path",
+        "slide_id": "path"
+      },
+      "cli_command": "mask smart-select",
+      "concurrency": {
+        "expected_revision_supported": false,
+        "resource_scope": null
+      },
+      "contract_revision": "e16f40df36f6730ef8246d8a",
+      "description": "Generate an exact single-object mask from positive/negative point prompts via the SAM2 backend; the route returns 503 when no segmentation backend is available.",
+      "destructive": false,
+      "domain": "mask",
+      "id": "mask.smart_selection",
+      "idempotency": {
+        "key_required": false,
+        "supported": false
+      },
+      "input_schema": {
+        "$defs": {
+          "MaskPoint": {
+            "properties": {
+              "x": {
+                "description": "点的 x 像素坐标",
+                "title": "X",
+                "type": "integer"
+              },
+              "y": {
+                "description": "点的 y 像素坐标",
+                "title": "Y",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "x",
+              "y"
+            ],
+            "title": "MaskPoint",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "properties": {
+          "negative": {
+            "description": "负点（背景），可选",
+            "items": {
+              "$ref": "#/$defs/MaskPoint"
+            },
+            "type": "array"
+          },
+          "positive": {
+            "description": "正点（前景），至少一个",
+            "items": {
+              "$ref": "#/$defs/MaskPoint"
+            },
+            "type": "array"
+          },
+          "project_id": {
+            "description": "The project ID.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "slide_id": {
+            "description": "The slide ID.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "positive",
+          "project_id",
+          "slide_id"
+        ],
+        "type": "object"
+      },
+      "invocable": true,
+      "long_running": false,
+      "mcp_enabled": true,
+      "mcp_tool": "ppt_mask_smart_selection",
+      "method": "POST",
+      "output_schema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "path": "/api/agent/v1/projects/{project_id}/mask/slides/{slide_id}/smart-selection",
+      "required_scopes": [
+        "project:write"
+      ],
+      "response_kind": "json",
+      "status": "stable",
+      "version": "1.0"
+    },
+    {
+      "behavior_version": "1",
+      "bindings": {
         "project_id": "path"
       },
       "cli_command": "annotation summary",
@@ -18922,5 +19018,5 @@
       "version": "1.0"
     }
   ],
-  "contract_hash": "9cb4a9129233a89f"
+  "contract_hash": "e9cdfe8908008bff"
 }

@@ -74,6 +74,14 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "overwrite_existing_manual_mask": False,
     "overwrite_existing_ai_mask": True,
     "skip_locked_groups": True,
+    # 分割引擎：auto 自动探测 ComfyUI+SAM2，cpu 强制确定性白底，cuda 要求 GPU。
+    "segmentation_device_mode": "auto",
+    # ComfyUI 服务地址，可逗号分隔多个候选；留空则用本机 127.0.0.1:8188。
+    "comfyui_base_url": "",
+    # SAM2 档位：tiny/small/base_plus/large；5080 16GB 默认 large。
+    "sam2_tier": "large",
+    # SAM2 单对象分割 API 工作流模板路径。
+    "sam2_workflow_path": "",
 }
 
 @dataclass(frozen=True)
@@ -460,6 +468,11 @@ def normalize_settings(raw: dict[str, Any] | None) -> dict[str, Any]:
         "overwrite_existing_manual_mask": _bool(raw.get("overwrite_existing_manual_mask"), False),
         "overwrite_existing_ai_mask": _bool(raw.get("overwrite_existing_ai_mask"), True),
         "skip_locked_groups": _bool(raw.get("skip_locked_groups"), True),
+        # 分割引擎路由设置，归一化逻辑在 segmentation_backend 内实现。
+        "segmentation_device_mode": _normalize_segment_device(raw.get("segmentation_device_mode")),
+        "comfyui_base_url": str(raw.get("comfyui_base_url") or "").strip(),
+        "sam2_tier": _normalize_sam2_tier(raw.get("sam2_tier")),
+        "sam2_workflow_path": str(raw.get("sam2_workflow_path") or "").strip(),
     }
 
 
@@ -467,6 +480,13 @@ from ai_mask_component_detection import (
     _read_json,
     _write_json,
     detect_elements,
+)
+
+
+from ai_mask_segmentation_backend import (
+    normalize_device_mode as _normalize_segment_device,
+    normalize_sam2_tier as _normalize_sam2_tier,
+    segment_elements,
 )
 
 
@@ -628,7 +648,9 @@ def _annotate_project(
             capabilities.logger.info(
                 "DocLayout-YOLO: %d layout boxes detected for %s", len(layout_boxes), slide_id
             )
-        elements = detect_elements(image_path, slide_dir, settings, layout_boxes, layout_record)
+        elements = segment_elements(
+            capabilities, image_path, slide_dir, settings, layout_boxes, layout_record
+        )
         stage_ms = dict(layout_record.get("elapsed_ms") or {})
         stage_ms.update(elements.get("stage_timing_ms") or {})
         canvas = elements.get("canvas", {}) if isinstance(elements.get("canvas"), dict) else {}

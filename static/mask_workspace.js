@@ -796,6 +796,9 @@ function renderStep5BoxesForm() {
         <span class="mask-block-caption">语块 ${idx + 1}</span>
         ${blockingIssues.length ? `<span class="ai-mask-card-issue-badge" title="${escHtml(blockingIssues.map(issue => issue.message || issue.type).join('\n'))}">需修正 · ${blockingIssues.length}</span>` : ''}
         <div class="mask-block-actions">
+          <button class="mask-icon-btn" type="button" data-action="smart" title="智能选区：点选自动生成精确蒙版" aria-label="智能选区">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M15 4V2"></path><path d="M15 16v-2"></path><path d="M8 9h2"></path><path d="M20 9h2"></path><path d="M17.8 11.8 19 13"></path><path d="M15 9h.01"></path><path d="M17.8 6.2 19 5"></path><path d="m3 21 9-9"></path><path d="M12.2 6.2 11 5"></path></svg>
+          </button>
           <button class="mask-icon-btn${isPaintTarget ? ' active' : ''}" type="button" data-action="paint" title="画笔补充当前语块" aria-label="画笔补充">
             <svg class="icon" viewBox="0 0 24 24"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path></svg>
           </button>
@@ -821,6 +824,10 @@ function renderStep5BoxesForm() {
       selectStep5MaskBox(idx);
     });
 
+    item.querySelector('[data-action="smart"]')?.addEventListener('click', (event) => {
+      event.stopPropagation();
+      startSmartSelection(idx);
+    });
     item.querySelector('[data-action="paint"]')?.addEventListener('click', (event) => {
       event.stopPropagation();
       startMaskPaint(idx);

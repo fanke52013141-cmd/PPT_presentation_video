@@ -12753,3 +12753,39 @@ body.workspace-open #step-panel-5 .workspace-split {
   box-shadow: 0 2px 5px rgba(215, 51, 51, .18) !important;
 }
 #btn-confirm-yes.danger:hover { background: #b92a2a !important; border-color: #b92a2a !important; }
+
+/* Step 5 智能选区（SAM2 点提示）浮动操作条 */
+.step5-smart-bar {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
+  font-size: 0.85rem;
+}
+.step5-smart-bar[hidden] { display: none; }
+.step5-smart-count { color: #444; font-weight: 600; white-space: nowrap; }
+.step5-smart-actions { display: flex; gap: 0.4rem; }
+.step5-smart-actions button {
+  padding: 0.32rem 0.7rem;
+  font-size: 0.82rem;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.step5-smart-actions button.active {
+  background: #f46a38;
+  color: #fff;
+  border-color: #f46a38;
+}
+.step5-smart-actions button:disabled { opacity: 0.55; cursor: not-allowed; }
+@media (max-width: 900px) {
+  .step5-smart-bar { flex-direction: column; gap: 0.4rem; align-items: stretch; }
+}

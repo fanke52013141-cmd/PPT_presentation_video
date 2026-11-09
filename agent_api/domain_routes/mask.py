@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from agent_contract.domains.mask import (
     MaskAnnotateRequest,
     MaskResultUpdateRequest,
+    MaskSmartSelectionRequest,
 )
 from agent_contract.domains.freeform import FreeFormRequest, OptionalFreeFormRequest
 from database import Project, get_db
@@ -163,3 +164,34 @@ def agent_get_mask_preview(
     except Exception as exc:
         _translate_error(exc)
     return FileResponse(preview_path, media_type="image/png")
+
+
+@router.post("/projects/{project_id}/mask/slides/{slide_id}/smart-selection")
+def agent_smart_selection(
+    project_id: str,
+    slide_id: str,
+    payload: MaskSmartSelectionRequest,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    from pathlib import Path
+
+    from ai_mask_contracts import resolve_mask_source_master
+    from ai_mask_config import get_ai_mask_settings
+    from ai_mask_segmentation_backend import run_smart_selection
+    from agent_api.domain_routes.common import agent_http_error
+
+    project = _project_or_404(db, project_id)
+    master = Path(project.run_dir) / "slides" / slide_id / "visual_draft.png"
+    image_path = resolve_mask_source_master(master)
+    if not image_path or not Path(image_path).exists():
+        raise agent_http_error(404, "当前页原图不存在")
+    positive = [point.model_dump() for point in payload.positive]
+    negative = [point.model_dump() for point in payload.negative]
+    result = run_smart_selection(
+        Path(image_path), positive, negative, get_ai_mask_settings()
+    )
+    if not result.get("success"):
+        raise agent_http_error(
+            503, result.get("reason") or "智能分割后端不可用"
+        )
+    return result

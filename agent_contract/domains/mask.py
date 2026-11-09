@@ -20,6 +20,16 @@ class MaskAnnotateRequest(BaseModel):
     slide_ids: Optional[list[str]] = Field(None, description="限定处理的页面；缺省为全部页面")
 
 
+class MaskPoint(BaseModel):
+    x: int = Field(..., description="点的 x 像素坐标")
+    y: int = Field(..., description="点的 y 像素坐标")
+
+
+class MaskSmartSelectionRequest(BaseModel):
+    positive: list[MaskPoint] = Field(..., description="正点（前景），至少一个")
+    negative: list[MaskPoint] = Field(default_factory=list, description="负点（背景），可选")
+
+
 CAPABILITIES = [
     AgentCapability(
         id="mask.settings.get", version="1.0", behavior_version="1",
@@ -113,5 +123,15 @@ CAPABILITIES = [
         service_ref="mask_preview_service.get_step5_mask_preview_path",
         transport="binary",
         mcp_enabled=False,
+    ),
+    AgentCapability(
+        id="mask.smart_selection", version="1.0", behavior_version="1",
+        status=CapabilityStatus.stable,
+        description="Generate an exact single-object mask from positive/negative point prompts via the SAM2 backend; the route returns 503 when no segmentation backend is available.",
+        request_model=MaskSmartSelectionRequest, response_model=BaseModel,
+        agent_api_method="POST",
+        agent_api_path="/api/agent/v1/projects/{project_id}/mask/slides/{slide_id}/smart-selection",
+        mcp_tool_name="ppt_mask_smart_selection", cli_command="mask smart-select",
+        service_ref="ai_mask_segmentation_backend.run_smart_selection",
     ),
 ]

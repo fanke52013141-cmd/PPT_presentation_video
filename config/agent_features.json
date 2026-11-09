@@ -2044,6 +2044,22 @@
     "coverage": "complete",
     "reason": "Real provider rehearsal 2026-10-24 (docs/agent/rehearsal-log-2026-10-24.md): preview built for slide_001 (4.7s) after the mask final save."
   },
+  "mask_editor_routes.post_step5_smart_selection": {
+    "source": "mask_editor_routes.py",
+    "routes": [
+      {
+        "method": "POST",
+        "declaration": "router.post('/api/projects/{project_id}/steps/5/slides/{slide_id}/smart-selection')",
+        "router": "APIRouter()"
+      }
+    ],
+    "owner": "mask_editor_routes.py",
+    "capabilities": [
+      "mask.smart_selection"
+    ],
+    "coverage": "complete",
+    "reason": "SAM2 point-prompt smart selection: positive/negative points are validated and routed to run_smart_selection; backend unavailable returns 503 so the UI falls back. Deterministic fallback verified locally; GPU smoke test pending on the RTX 5080 machine."
+  },
   "mask_editor_routes.get_step5_mask_preview": {
     "source": "mask_editor_routes.py",
     "routes": [
